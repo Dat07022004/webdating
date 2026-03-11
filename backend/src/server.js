@@ -6,6 +6,7 @@ import { connectDB } from './config/db.js';
 import { serve } from 'inngest/express';
 
 import { functions, inngest } from './config/inngest.js';
+import appointmentRoutes from './routes/appointment.routes.js';
 
 const app = express();
 
@@ -16,6 +17,7 @@ app.use(express.json());
 app.use(clerkMiddleware()) // adds auth object under the req => req.auth
 
 app.use("/api/inngest",serve({client: inngest, functions}));
+app.use('/api/appointments', appointmentRoutes);
 
 app.get("/api/health", (req, res) =>{
     res.status(200).json({ messsage: "OK" });
