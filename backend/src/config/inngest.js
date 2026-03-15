@@ -10,14 +10,22 @@ const syncUser = inngest.createFunction(
     async ({event}) => {
         await connectDB();
         const {id, email_addresses, first_name, last_name, image_url} = event.data;
+        const email = email_addresses[0]?.email_address;
+        const displayName = `${first_name || ''} ${last_name || ''}`.trim() || 'User';
+        const usernameBase = (email?.split('@')[0] || `user_${id.slice(-6)}`).toLowerCase();
 
         const newUser = {
             clerkId: id,
-            email: email_addresses[0]?.email_address,
-            name: `${first_name || ""} ${last_name || ""}` || "User",
-            imageUrl: image_url,
-            addresses: [],
-            wishlist: [], 
+            email,
+            username: `${usernameBase}_${id.slice(-6)}`,
+            // Placeholder hash for Clerk-managed auth accounts.
+            passwordHash: `clerk_${id}`,
+            profile: {
+                avatarUrl: image_url || '',
+                personalInfo: {
+                    name: displayName
+                }
+            }
         }
 
         await User.create(newUser);
