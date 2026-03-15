@@ -35,6 +35,7 @@ const userSchema = new mongoose.Schema({
         bio: { type: String, default: '' },
         personalInfo: {
             name: String,
+            birthday: Date,
             age: Number,
             gender: String,
             locationText: String,
