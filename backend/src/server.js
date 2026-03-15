@@ -12,13 +12,12 @@ const app = express();
 
 const _dirname = path.resolve();
 
+// Keep Inngest route before JSON body parsing middleware.
+app.use("/api/inngest",serve({client: inngest, functions}));
 
 app.use(express.json());
 app.use(clerkMiddleware()) // adds auth object under the req => req.auth
-
-app.use("/api/inngest",serve({client: inngest, functions}));
 app.use('/api/appointments', appointmentRoutes);
-
 app.get("/api/health", (req, res) =>{
     res.status(200).json({ messsage: "OK" });
 } );
