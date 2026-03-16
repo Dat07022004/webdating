@@ -12,7 +12,7 @@ import appointmentRoutes from './routes/appointment.routes.js';
 const app = express();
 
 const _dirname = path.resolve();
-
+// Helper utilities for onboarding processing
 const normalizeEmail = (value) => (value || '').trim().toLowerCase();
 
 const buildDisplayName = (firstName, lastName) =>
@@ -49,11 +49,12 @@ const buildOnboardingUpdateDoc = ({
     ...(lookingFor ? { 'preferences.preferredGenders': [lookingFor] } : {})
 });
 
+// Keep Inngest route before JSON body parsing middleware.
+app.use("/api/inngest",serve({client: inngest, functions}));
+
+app.use(express.json());
 app.use(clerkMiddleware()) // adds auth object under the req => req.auth
 app.use('/api/appointments', appointmentRoutes);
-
-// Inngest requests require parsed JSON body.
-app.use("/api/inngest",serve({client: inngest, functions}));
 
 app.post('/api/users/onboarding', async (req, res) => {
     try {
@@ -112,7 +113,6 @@ app.post('/api/users/onboarding', async (req, res) => {
         }
 
         // 2) Fallback for rows created before Clerk linkage.
-        // If the same email existed with an old clerkId, relink to the current Clerk user.
         if (safeEmail) {
             const byEmail = await User.updateOne(
                 { email: safeEmail },
