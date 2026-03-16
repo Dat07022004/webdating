@@ -156,6 +156,7 @@ app.post('/api/users/onboarding', async (req, res) => {
         return res.status(500).json({ message: error?.message || 'Failed to save onboarding data' });
     }
 });
+ 
 app.get("/api/health", (req, res) =>{
     res.status(200).json({ messsage: "OK" });
 } );
