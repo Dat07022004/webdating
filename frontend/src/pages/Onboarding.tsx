@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
+import { useUser } from "@clerk/clerk-react";
 import {
   Heart,
   Camera,
@@ -33,6 +34,8 @@ const interestOptions = [
 
 export default function Onboarding() {
   const [currentStep, setCurrentStep] = useState(1);
+  const [isSaving, setIsSaving] = useState(false);
+  const [saveError, setSaveError] = useState("");
   const [formData, setFormData] = useState({
     birthday: "",
     gender: "",
@@ -43,12 +46,57 @@ export default function Onboarding() {
     bio: "",
   });
   const navigate = useNavigate();
+  const { user } = useUser();
 
-  const handleNext = () => {
-    if (currentStep < steps.length) {
-      setCurrentStep(currentStep + 1);
-    } else {
-      navigate("/discover");
+  const saveOnboarding = async () => {
+    setIsSaving(true);
+    setSaveError("");
+    try {
+      const payload = {
+        clerkId: user?.id || "",
+        email: user?.primaryEmailAddress?.emailAddress || "",
+        firstName: user?.firstName || "",
+        lastName: user?.lastName || "",
+        imageUrl: user?.imageUrl || "",
+        birthday: formData.birthday,
+        gender: formData.gender,
+        lookingFor: formData.lookingFor,
+        location: formData.location,
+        interests: formData.interests,
+        bio: formData.bio,
+      };
+
+      const response = await fetch("/api/users/onboarding", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          // Authorization: `Bearer ${token}`, // Removed hard dependency on token
+        },
+        body: JSON.stringify(payload),
+      });
+
+      if (!response.ok) {
+        const data = (await response.json().catch(() => ({}))) as { message?: string };
+        throw new Error(data.message || "Lưu thông tin thất bại");
+      }
+    } catch (error) {
+      setSaveError(error instanceof Error ? error.message : "Lưu thông tin thất bại");
+      throw error;
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleNext = async () => {
+    try {
+      await saveOnboarding();
+      if (currentStep < steps.length) {
+        setCurrentStep(currentStep + 1);
+      } else {
+        navigate("/discover");
+      }
+    } catch {
+      // Error is already shown in UI state.
     }
   };
 
@@ -278,20 +326,23 @@ export default function Onboarding() {
           ) : (
             <div />
           )}
-          <Button variant="gradient" onClick={handleNext} className="gap-2">
+          <Button variant="gradient" onClick={handleNext} className="gap-2" disabled={isSaving}>
             {currentStep === steps.length ? (
               <>
                 <Sparkles className="w-4 h-4" />
-                Complete Profile
+                {isSaving ? "Saving..." : "Complete Profile"}
               </>
             ) : (
               <>
-                Next
+                {isSaving ? "Saving..." : "Next"}
                 <ArrowRight className="w-4 h-4" />
               </>
             )}
           </Button>
         </div>
+        {saveError && (
+          <p className="text-sm text-destructive mt-4 text-center">{saveError}</p>
+        )}
       </div>
     </div>
   );
