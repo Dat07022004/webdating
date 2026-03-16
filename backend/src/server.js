@@ -13,11 +13,47 @@ const app = express();
 
 const _dirname = path.resolve();
 
-// Keep Inngest route before JSON body parsing middleware.
-app.use("/api/inngest",serve({client: inngest, functions}));
+const normalizeEmail = (value) => (value || '').trim().toLowerCase();
+
+const buildDisplayName = (firstName, lastName) =>
+    `${firstName || ''} ${lastName || ''}`.trim() || 'User';
+
+const buildUsername = (email, clerkId) => {
+    const usernameBase = (email.split('@')[0] || `user_${clerkId.slice(-6)}`).toLowerCase();
+    const sanitizedUsername = usernameBase.replace(/[^a-z0-9_]/g, '').slice(0, 20) || 'user';
+    return `${sanitizedUsername}_${clerkId.slice(-6).toLowerCase()}`;
+};
+
+const buildOnboardingUpdateDoc = ({
+    persistedEmail,
+    imageUrl,
+    bio,
+    displayName,
+    age,
+    hasValidBirthday,
+    birthdayDate,
+    gender,
+    location,
+    interests,
+    lookingFor
+}) => ({
+    email: persistedEmail,
+    ...(imageUrl ? { 'profile.avatarUrl': imageUrl } : {}),
+    ...(bio !== undefined ? { 'profile.bio': bio } : {}),
+    ...(displayName ? { 'profile.personalInfo.name': displayName } : {}),
+    ...(age !== undefined ? { 'profile.personalInfo.age': age } : {}),
+    ...(hasValidBirthday ? { 'profile.personalInfo.birthday': birthdayDate } : {}),
+    ...(gender ? { 'profile.personalInfo.gender': gender } : {}),
+    ...(location ? { 'profile.personalInfo.locationText': location } : {}),
+    ...(Array.isArray(interests) ? { 'profile.interests': interests } : {}),
+    ...(lookingFor ? { 'preferences.preferredGenders': [lookingFor] } : {})
+});
 
 app.use(clerkMiddleware()) // adds auth object under the req => req.auth
 app.use('/api/appointments', appointmentRoutes);
+
+// Inngest requests require parsed JSON body.
+app.use("/api/inngest",serve({client: inngest, functions}));
 
 app.post('/api/users/onboarding', async (req, res) => {
     try {
@@ -47,50 +83,68 @@ app.post('/api/users/onboarding', async (req, res) => {
             ? Math.max(0, new Date().getFullYear() - birthdayDate.getFullYear())
             : undefined;
 
-        const safeEmail = email || auth?.sessionClaims?.email;
-        const displayName = `${firstName || ''} ${lastName || ''}`.trim() || 'User';
-        const usernameBase = (safeEmail?.split('@')[0] || `user_${clerkId.slice(-6)}`).toLowerCase();
-        const sanitizedUsername = usernameBase.replace(/[^a-z0-9_]/g, '').slice(0, 20) || 'user';
+        const safeEmail = normalizeEmail(auth?.sessionClaims?.email || email);
+        const displayName = buildDisplayName(firstName, lastName);
+        const username = buildUsername(safeEmail, clerkId);
         const persistedEmail = safeEmail || `user_${clerkId.slice(-6)}@placeholder.local`;
 
-        const updateDoc = {
-            email: persistedEmail,
-            ...(imageUrl ? { 'profile.avatarUrl': imageUrl } : {}),
-            ...(bio !== undefined ? { 'profile.bio': bio } : {}),
-            ...(displayName ? { 'profile.personalInfo.name': displayName } : {}),
-            ...(age !== undefined ? { 'profile.personalInfo.age': age } : {}),
-            ...(hasValidBirthday ? { 'profile.personalInfo.birthday': birthdayDate } : {}),
-            ...(gender ? { 'profile.personalInfo.gender': gender } : {}),
-            ...(location ? { 'profile.personalInfo.locationText': location } : {}),
-            ...(Array.isArray(interests) ? { 'profile.interests': interests } : {}),
-            ...(lookingFor ? { 'preferences.preferredGenders': [lookingFor] } : {})
-        };
+        const updateDoc = buildOnboardingUpdateDoc({
+            persistedEmail,
+            imageUrl,
+            bio,
+            displayName,
+            age,
+            hasValidBirthday,
+            birthdayDate,
+            gender,
+            location,
+            interests,
+            lookingFor
+        });
 
-        try {
-            await User.findOneAndUpdate(
-                { clerkId },
+        // 1) Update existing record by clerkId first.
+        const byClerkId = await User.updateOne(
+            { clerkId },
+            { $set: updateDoc }
+        );
+        if (byClerkId.matchedCount > 0) {
+            return res.status(200).json({ message: 'Onboarding data saved' });
+        }
+
+        // 2) Fallback for rows created before Clerk linkage.
+        // If the same email existed with an old clerkId, relink to the current Clerk user.
+        if (safeEmail) {
+            const byEmail = await User.updateOne(
+                { email: safeEmail },
                 {
-                    $setOnInsert: {
+                    $set: {
                         clerkId,
-                        username: `${sanitizedUsername}_${clerkId.slice(-6).toLowerCase()}`,
-                        passwordHash: `clerk_${clerkId}`
-                    },
-                    $set: updateDoc
-                },
-                { upsert: true, new: true, setDefaultsOnInsert: true }
-            );
-        } catch (error) {
-            // Handle existing users created earlier without matching clerkId.
-            if (error?.code === 11000 && safeEmail) {
-                await User.updateOne(
-                    { email: safeEmail },
-                    {
-                        $set: {
-                            clerkId,
-                            ...updateDoc
-                        }
+                        ...updateDoc
                     }
-                );
+                }
+            );
+
+            if (byEmail.matchedCount > 0) {
+                return res.status(200).json({ message: 'Onboarding data saved' });
+            }
+        }
+
+        // 3) Create if no record exists yet.
+        try {
+            await User.create({
+                clerkId,
+                email: persistedEmail,
+                username,
+                passwordHash: `clerk_${clerkId}`,
+                ...(imageUrl ? { profile: { avatarUrl: imageUrl, personalInfo: { name: displayName } } } : {
+                    profile: { personalInfo: { name: displayName } }
+                })
+            });
+
+            await User.updateOne({ clerkId }, { $set: updateDoc });
+        } catch (error) {
+            if (error?.code === 11000) {
+                await User.updateOne({ clerkId }, { $set: updateDoc });
             } else {
                 throw error;
             }
