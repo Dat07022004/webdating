@@ -12,6 +12,42 @@ const app = express();
 
 const _dirname = path.resolve();
 
+const normalizeEmail = (value) => (value || '').trim().toLowerCase();
+
+const buildDisplayName = (firstName, lastName) =>
+    `${firstName || ''} ${lastName || ''}`.trim() || 'User';
+
+const buildUsername = (email, clerkId) => {
+    const usernameBase = (email.split('@')[0] || `user_${clerkId.slice(-6)}`).toLowerCase();
+    const sanitizedUsername = usernameBase.replace(/[^a-z0-9_]/g, '').slice(0, 20) || 'user';
+    return `${sanitizedUsername}_${clerkId.slice(-6).toLowerCase()}`;
+};
+
+const buildOnboardingUpdateDoc = ({
+    persistedEmail,
+    imageUrl,
+    bio,
+    displayName,
+    age,
+    hasValidBirthday,
+    birthdayDate,
+    gender,
+    location,
+    interests,
+    lookingFor
+}) => ({
+    email: persistedEmail,
+    ...(imageUrl ? { 'profile.avatarUrl': imageUrl } : {}),
+    ...(bio !== undefined ? { 'profile.bio': bio } : {}),
+    ...(displayName ? { 'profile.personalInfo.name': displayName } : {}),
+    ...(age !== undefined ? { 'profile.personalInfo.age': age } : {}),
+    ...(hasValidBirthday ? { 'profile.personalInfo.birthday': birthdayDate } : {}),
+    ...(gender ? { 'profile.personalInfo.gender': gender } : {}),
+    ...(location ? { 'profile.personalInfo.locationText': location } : {}),
+    ...(Array.isArray(interests) ? { 'profile.interests': interests } : {}),
+    ...(lookingFor ? { 'preferences.preferredGenders': [lookingFor] } : {})
+});
+
 app.use(express.json());
 app.use(clerkMiddleware()) // adds auth access on req via req.auth()
 
@@ -119,9 +155,6 @@ app.post('/api/users/onboarding', async (req, res) => {
         return res.status(500).json({ message: error?.message || 'Failed to save onboarding data' });
     }
 });
-
-// Inngest execute/sync requests require parsed JSON body.
-app.use("/api/inngest",serve({client: inngest, functions}));
 
 app.get("/api/health", (req, res) =>{
     res.status(200).json({ messsage: "OK" });
