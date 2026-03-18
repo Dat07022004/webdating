@@ -6,14 +6,14 @@ import { connectDB } from './config/db.js';
 import { serve } from 'inngest/express';
 import userRoutes from './routes/user.routes.js';
 import healthRoutes from './routes/health.routes.js';
+import appointmentRoutes from './routes/appointment.routes.js';
 
 import { functions, inngest } from './config/inngest.js';
-import appointmentRoutes from './routes/appointment.routes.js';
 
 const app = express();
 
 const _dirname = path.resolve();
-<<<<<<< HEAD
+
 // Helper utilities for onboarding processing
 const normalizeEmail = (value) => (value || '').trim().toLowerCase();
 
@@ -158,8 +158,9 @@ app.post('/api/users/onboarding', async (req, res) => {
         return res.status(500).json({ message: error?.message || 'Failed to save onboarding data' });
     }
 });
-    app.use('/api/users', userRoutes);
-    app.use('/api', healthRoutes);
+
+app.use('/api/users', userRoutes);
+app.use('/api', healthRoutes);
 
 if(ENV.NODE_ENV === 'production'){
     app.use(express.static(path.join(_dirname, "../frontend/dist"))); 

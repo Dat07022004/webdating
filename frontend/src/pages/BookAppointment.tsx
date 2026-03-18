@@ -1,222 +1,200 @@
-import { useState } from "react";
-import { Layout } from "@/components/layout/Layout";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { useState, useEffect } from "react";
+import { format } from "date-fns";
 import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Calendar } from "@/components/ui/calendar";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
-import { CalendarIcon, Clock, MapPin, Heart, ArrowLeft, Check } from "lucide-react";
-import { format } from "date-fns";
-import { cn } from "@/lib/utils";
-import { motion } from "framer-motion";
-import { Link } from "react-router-dom";
 import { useToast } from "@/hooks/use-toast";
+import { MapPin, CircleDollarSign, CalendarIcon, Clock, Users } from "lucide-react";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
-const matchedUsers = [
-  { id: 1, name: "Emma W.", initials: "EW", age: 26 },
-  { id: 2, name: "Sophie L.", initials: "SL", age: 24 },
-  { id: 3, name: "Olivia M.", initials: "OM", age: 28 },
-];
+interface Location {
+  name: string;
+  address: string;
+  estimatedCost: { amount: number, currency: string };
+}
 
-const spots = [
-  { id: 1, name: "Sunset Rooftop Lounge", location: "Downtown" },
-  { id: 2, name: "The Cozy Bean Café", location: "Midtown" },
-  { id: 3, name: "Bella Italia Trattoria", location: "Little Italy" },
-  { id: 4, name: "Botanical Gardens Walk", location: "Westside Park" },
-  { id: 5, name: "Jazz & Blues Corner", location: "Arts District" },
-];
-
-const timeSlots = [
-  "10:00 AM", "11:00 AM", "12:00 PM", "1:00 PM", "2:00 PM",
-  "3:00 PM", "4:00 PM", "5:00 PM", "6:00 PM", "7:00 PM", "8:00 PM", "9:00 PM",
-];
-
-const BookAppointment = () => {
-  const [date, setDate] = useState<Date>();
-  const [time, setTime] = useState("");
-  const [spot, setSpot] = useState("");
-  const [matchUser, setMatchUser] = useState("");
-  const [note, setNote] = useState("");
-  const [submitted, setSubmitted] = useState(false);
+export default function BookAppointment() {
   const { toast } = useToast();
+  const [loading, setLoading] = useState(false);
+  const [suggestions, setSuggestions] = useState<{locations: Location[], times: string[]}>({ locations: [], times: [] });
+  
+  // Form state
+  const [receiverId, setReceiverId] = useState(""); // Trong thực tế sẽ lấy từ context hoặc params
+  const [date, setDate] = useState("");
+  const [time, setTime] = useState("");
+  const [locationName, setLocationName] = useState("");
+  const [locationAddress, setLocationAddress] = useState("");
+  const [cost, setCost] = useState("");
+  const [notes, setNotes] = useState("");
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!date || !time || !spot || !matchUser) {
-      toast({ title: "Missing fields", description: "Please fill in all required fields.", variant: "destructive" });
-      return;
-    }
-    setSubmitted(true);
-    toast({ title: "Date booked! 🎉", description: "Your appointment has been scheduled." });
+  useEffect(() => {
+    // Fetch suggestions
+    const fetchSuggestions = async () => {
+      try {
+        const token = localStorage.getItem('token');
+        const res = await fetch('/api/appointments/suggestions', {
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+        const result = await res.json();
+        if (result.success) {
+          setSuggestions(result.data);
+        }
+      } catch (error) {
+        console.error("Failed to load suggestions");
+      }
+    };
+    fetchSuggestions();
+  }, []);
+
+  const handleSelectSuggestion = (loc: Location) => {
+    setLocationName(loc.name);
+    setLocationAddress(loc.address);
+    setCost(loc.estimatedCost.amount.toString());
   };
 
-  if (submitted) {
-    return (
-      <Layout isAuthenticated>
-        <div className="container mx-auto px-4 py-16 flex items-center justify-center min-h-[60vh]">
-          <motion.div initial={{ scale: 0.8, opacity: 0 }} animate={{ scale: 1, opacity: 1 }}>
-            <Card className="max-w-md w-full text-center gradient-card">
-              <CardContent className="pt-8 pb-8 space-y-4">
-                <div className="w-16 h-16 rounded-full gradient-primary flex items-center justify-center mx-auto">
-                  <Check className="w-8 h-8 text-primary-foreground" />
-                </div>
-                <h2 className="font-serif text-2xl font-bold text-foreground">Date Booked!</h2>
-                <p className="text-muted-foreground">Your date has been confirmed. You'll receive a notification when your match responds.</p>
-                <div className="flex gap-3 justify-center pt-4">
-                  <Button variant="outline" asChild><Link to="/appointments">View Appointments</Link></Button>
-                  <Button variant="gradient" asChild><Link to="/date-spots">Browse More</Link></Button>
-                </div>
-              </CardContent>
-            </Card>
-          </motion.div>
-        </div>
-      </Layout>
-    );
-  }
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setLoading(true);
+
+    try {
+      const token = localStorage.getItem('token');
+      
+      // Ghép date và time thành một Date object hợp lệ
+      const appointmentDate = new Date(`${date}T${time}:00`);
+      
+      const payload = {
+        receiverId: receiverId || "60d0fe4f5311236168a109ca", // Placeholder fallback
+        date: appointmentDate.toISOString(),
+        location: {
+          name: locationName,
+          address: locationAddress
+        },
+        estimatedCost: {
+          amount: Number(cost),
+          currency: "VND"
+        },
+        notes
+      };
+
+      const response = await fetch('/api/appointments', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify(payload)
+      });
+      
+      const result = await response.json();
+      if (result.success) {
+        toast({
+          title: "Thành công",
+          description: "Lịch hẹn đã được tạo",
+        });
+        window.location.href = '/appointments';
+      } else {
+        throw new Error(result.message);
+      }
+    } catch (error) {
+      toast({
+        title: "Lỗi",
+        description: "Không thể tạo lịch hẹn",
+        variant: "destructive"
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
 
   return (
-    <Layout isAuthenticated>
-      <div className="container mx-auto px-4 py-8 max-w-2xl">
-        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}>
-          <Button variant="ghost" asChild className="mb-4">
-            <Link to="/date-spots"><ArrowLeft className="w-4 h-4 mr-2" />Back to Date Spots</Link>
-          </Button>
-
-          <div className="mb-8">
-            <h1 className="text-3xl font-serif font-bold text-foreground mb-2">Book a Date</h1>
-            <p className="text-muted-foreground">Schedule a perfect meeting with your match</p>
-          </div>
-
-          <form onSubmit={handleSubmit} className="space-y-6">
-            {/* Select Match */}
-            <Card className="gradient-card">
-              <CardHeader>
-                <CardTitle className="text-lg font-serif flex items-center gap-2">
-                  <Heart className="w-5 h-5 text-primary" />Select Your Match
-                </CardTitle>
-                <CardDescription>Choose who you'd like to go on a date with</CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                  {matchedUsers.map(user => (
-                    <button
-                      type="button"
-                      key={user.id}
-                      onClick={() => setMatchUser(String(user.id))}
-                      className={cn(
-                        "flex items-center gap-3 p-3 rounded-xl border-2 transition-all",
-                        matchUser === String(user.id)
-                          ? "border-primary bg-coral-light/30"
-                          : "border-border hover:border-primary/50"
-                      )}
-                    >
-                      <Avatar className="h-10 w-10">
-                        <AvatarFallback className="gradient-primary text-primary-foreground text-sm">{user.initials}</AvatarFallback>
-                      </Avatar>
-                      <div className="text-left">
-                        <p className="font-medium text-foreground text-sm">{user.name}</p>
-                        <p className="text-xs text-muted-foreground">Age {user.age}</p>
-                      </div>
-                    </button>
-                  ))}
-                </div>
-              </CardContent>
-            </Card>
-
-            {/* Select Spot */}
-            <Card className="gradient-card">
-              <CardHeader>
-                <CardTitle className="text-lg font-serif flex items-center gap-2">
-                  <MapPin className="w-5 h-5 text-primary" />Choose a Place
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <Select value={spot} onValueChange={setSpot}>
-                  <SelectTrigger><SelectValue placeholder="Select a date spot" /></SelectTrigger>
-                  <SelectContent>
-                    {spots.map(s => (
-                      <SelectItem key={s.id} value={String(s.id)}>{s.name} — {s.location}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </CardContent>
-            </Card>
-
-            {/* Date & Time */}
-            <Card className="gradient-card">
-              <CardHeader>
-                <CardTitle className="text-lg font-serif flex items-center gap-2">
-                  <CalendarIcon className="w-5 h-5 text-primary" />Date & Time
-                </CardTitle>
-              </CardHeader>
+    <div className="container max-w-3xl py-10">
+      <h1 className="text-3xl font-bold mb-6">Tạo Lịch Hẹn Mới</h1>
+      
+      <div className="grid md:grid-cols-2 gap-8">
+        <div>
+          <Card>
+            <CardHeader>
+              <CardTitle>Thông tin chi tiết</CardTitle>
+              <CardDescription>Điền thông tin cho cuộc hẹn của bạn</CardDescription>
+            </CardHeader>
+            <form onSubmit={handleSubmit}>
               <CardContent className="space-y-4">
-                <div>
-                  <Label className="mb-2 block">Date</Label>
-                  <Popover>
-                    <PopoverTrigger asChild>
-                      <Button variant="outline" className={cn("w-full justify-start text-left font-normal", !date && "text-muted-foreground")}>
-                        <CalendarIcon className="mr-2 h-4 w-4" />
-                        {date ? format(date, "PPP") : "Pick a date"}
-                      </Button>
-                    </PopoverTrigger>
-                    <PopoverContent className="w-auto p-0" align="start">
-                      <Calendar
-                        mode="single"
-                        selected={date}
-                        onSelect={setDate}
-                        disabled={(d) => d < new Date()}
-                        initialFocus
-                        className={cn("p-3 pointer-events-auto")}
-                      />
-                    </PopoverContent>
-                  </Popover>
+                <div className="space-y-2">
+                  <Label>ID Người nhận (Tạm thời nhập ID user test)</Label>
+                  <Input value={receiverId} onChange={e => setReceiverId(e.target.value)} required placeholder="vd: 60d0fe4..." />
                 </div>
-                <div>
-                  <Label className="mb-2 block">Time</Label>
-                  <Select value={time} onValueChange={setTime}>
-                    <SelectTrigger>
-                      <Clock className="w-4 h-4 mr-2" />
-                      <SelectValue placeholder="Select time" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {timeSlots.map(t => (
-                        <SelectItem key={t} value={t}>{t}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label>Ngày hẹn</Label>
+                    <Input type="date" value={date} onChange={e => setDate(e.target.value)} required />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Giờ hẹn</Label>
+                    <Input type="time" value={time} onChange={e => setTime(e.target.value)} required />
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <Label>Tên địa điểm</Label>
+                  <Input value={locationName} onChange={e => setLocationName(e.target.value)} required />
+                </div>
+                
+                <div className="space-y-2">
+                  <Label>Địa chỉ</Label>
+                  <Input value={locationAddress} onChange={e => setLocationAddress(e.target.value)} required />
+                </div>
+
+                <div className="space-y-2">
+                  <Label>Chi phí dự kiến (VNĐ)</Label>
+                  <Input type="number" value={cost} onChange={e => setCost(e.target.value)} required />
+                </div>
+
+                <div className="space-y-2">
+                  <Label>Ghi chú</Label>
+                  <Input value={notes} onChange={e => setNotes(e.target.value)} placeholder="VD: Gặp nhau lúc 19h nhé" />
                 </div>
               </CardContent>
-            </Card>
+              <CardFooter>
+                <Button type="submit" disabled={loading} className="w-full">
+                  {loading ? "Đang xử lý..." : "Tạo lịch hẹn"}
+                </Button>
+              </CardFooter>
+            </form>
+          </Card>
+        </div>
 
-            {/* Note */}
-            <Card className="gradient-card">
-              <CardHeader>
-                <CardTitle className="text-lg font-serif">Add a Note (Optional)</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <Textarea
-                  placeholder="Anything you'd like your date to know..."
-                  value={note}
-                  onChange={e => setNote(e.target.value)}
-                  maxLength={300}
-                  rows={3}
-                />
-                <p className="text-xs text-muted-foreground mt-1">{note.length}/300</p>
-              </CardContent>
-            </Card>
-
-            <Button type="submit" variant="hero" className="w-full">
-              Confirm Date Booking
-            </Button>
-          </form>
-        </motion.div>
+        <div>
+          <Card className="bg-muted/50">
+            <CardHeader>
+              <CardTitle>Gợi ý từ hệ thống</CardTitle>
+              <CardDescription>Các địa điểm hẹn hò lý tưởng cho bạn</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {suggestions.locations.map((loc, index) => (
+                <div 
+                  key={index} 
+                  className="p-3 border rounded-lg bg-background hover:border-primary cursor-pointer transition-colors"
+                  onClick={() => handleSelectSuggestion(loc)}
+                >
+                  <div className="font-medium text-primary">{loc.name}</div>
+                  <div className="text-sm text-muted-foreground flex items-center gap-1 mt-1">
+                    <MapPin className="w-3 h-3" /> {loc.address}
+                  </div>
+                  <div className="text-sm text-muted-foreground flex items-center gap-1 mt-1">
+                    <CircleDollarSign className="w-3 h-3" /> {loc.estimatedCost.amount.toLocaleString()} VNĐ
+                  </div>
+                </div>
+              ))}
+              
+              {suggestions.locations.length === 0 && (
+                <div className="text-sm text-muted-foreground">Đang tải gợi ý...</div>
+              )}
+            </CardContent>
+          </Card>
+        </div>
       </div>
-    </Layout>
+    </div>
   );
-};
-
-export default BookAppointment;
+}

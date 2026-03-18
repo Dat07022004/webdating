@@ -30,6 +30,7 @@ const userSchema = new mongoose.Schema({
         unique: true
     },
     isVerified: { type: Boolean, default: false },
+    role: { type: String, enum: ['user', 'admin'], default: 'user' },
     profile: {
         avatarUrl: { type: String, default: '' },
         bio: { type: String, default: '' },
