@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import multer from 'multer';
-import { onboardUser, uploadUserPhotos } from '../controllers/user.controller.js';
+import { getMyProfile, onboardUser, updateMyProfile, uploadUserPhotos } from '../controllers/user.controller.js';
 
 const router = Router();
 const upload = multer({
@@ -13,5 +13,7 @@ const upload = multer({
 
 router.post('/onboarding', onboardUser);
 router.post('/photos/upload', upload.array('photos', 6), uploadUserPhotos);
+router.get('/me', getMyProfile);
+router.put('/me', updateMyProfile);
 
 export default router;
