@@ -9,9 +9,9 @@ interface LayoutProps {
 
 export const Layout = ({ children, isAuthenticated = false, showNavbar = true }: LayoutProps) => {
   return (
-    <div className="min-h-screen gradient-hero">
+    <div className="min-h-screen bg-transparent">
       {showNavbar && <Navbar isAuthenticated={isAuthenticated} />}
-      <main className={showNavbar ? "pt-16" : ""}>
+      <main className={showNavbar ? "pt-20" : ""}>
         {children}
       </main>
     </div>

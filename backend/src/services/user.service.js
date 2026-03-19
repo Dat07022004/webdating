@@ -1,4 +1,5 @@
 import { User } from '../models/user.model.js';
+import cloudinary from '../config/cloudinary.js';
 
 const normalizeEmail = (value) => (value || '').trim().toLowerCase();
 
@@ -14,6 +15,7 @@ const buildUsername = (email, clerkId) => {
 const buildOnboardingUpdateDoc = ({
     persistedEmail,
     imageUrl,
+    photos,
     bio,
     displayName,
     age,
@@ -24,8 +26,15 @@ const buildOnboardingUpdateDoc = ({
     interests,
     lookingFor
 }) => ({
+    ...(Array.isArray(photos) && photos.length > 0
+        ? {
+            'profile.photos': photos,
+            'profile.avatarUrl': photos.find((photo) => photo?.isPrimary)?.url || photos[0]?.url || imageUrl || ''
+        }
+        : imageUrl
+            ? { 'profile.avatarUrl': imageUrl }
+            : {}),
     email: persistedEmail,
-    ...(imageUrl ? { 'profile.avatarUrl': imageUrl } : {}),
     ...(bio !== undefined ? { 'profile.bio': bio } : {}),
     ...(displayName ? { 'profile.personalInfo.name': displayName } : {}),
     ...(age !== undefined ? { 'profile.personalInfo.age': age } : {}),
@@ -68,12 +77,59 @@ const tryRelinkByEmail = async ({ clerkId, safeEmail, updateDoc }) => {
     return true;
 };
 
+const uploadBufferToCloudinary = (buffer, options) =>
+    new Promise((resolve, reject) => {
+        const stream = cloudinary.uploader.upload_stream(options, (error, result) => {
+            if (error) {
+                reject(error);
+                return;
+            }
+
+            resolve(result);
+        });
+
+        stream.end(buffer);
+    });
+
+export const uploadUserPhotosToCloudinary = async ({ files, clerkId }) => {
+    if (!Array.isArray(files) || files.length === 0) {
+        return [];
+    }
+
+    const uploadFolder = `webdating/users/${clerkId || 'anonymous'}`;
+    const uploadResults = await Promise.all(
+        files.map(async (file, index) => {
+            const mimetype = (file?.mimetype || '').toLowerCase();
+            if (!mimetype.startsWith('image/')) {
+                throw new Error('Only image files are allowed');
+            }
+
+            const result = await uploadBufferToCloudinary(file.buffer, {
+                folder: uploadFolder,
+                resource_type: 'image',
+                public_id: `${Date.now()}_${index}`,
+                overwrite: false
+            });
+
+            return {
+                url: result.secure_url,
+                publicId: result.public_id,
+                isPrimary: false,
+                uploadedAt: new Date()
+            };
+        })
+    );
+
+    return uploadResults;
+};
+
 export const saveUserOnboarding = async ({ clerkId, auth, body }) => {
     const {
         email,
         firstName,
         lastName,
         imageUrl,
+        photos,
         birthday,
         gender,
         lookingFor,
@@ -81,6 +137,17 @@ export const saveUserOnboarding = async ({ clerkId, auth, body }) => {
         interests,
         bio
     } = body || {};
+
+    const normalizedPhotos = Array.isArray(photos)
+        ? photos
+            .filter((photo) => photo && typeof photo.url === 'string' && photo.url.trim())
+            .map((photo, index) => ({
+                url: photo.url.trim(),
+                publicId: typeof photo.publicId === 'string' ? photo.publicId : '',
+                isPrimary: photo.isPrimary === true || index === 0,
+                uploadedAt: photo.uploadedAt ? new Date(photo.uploadedAt) : new Date()
+            }))
+        : [];
 
     const birthdayDate = birthday ? new Date(birthday) : null;
     const hasValidBirthday = !!birthdayDate && !Number.isNaN(birthdayDate.getTime());
@@ -96,6 +163,7 @@ export const saveUserOnboarding = async ({ clerkId, auth, body }) => {
     const updateDoc = buildOnboardingUpdateDoc({
         persistedEmail,
         imageUrl,
+        photos: normalizedPhotos,
         bio,
         displayName,
         age,

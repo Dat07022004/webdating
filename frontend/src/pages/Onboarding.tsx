@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useRef, useState, type ChangeEvent } from "react";
 import { useNavigate } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import { useUser } from "@clerk/clerk-react";
@@ -11,6 +11,7 @@ import {
   Check,
   Plus,
   Sparkles,
+  X,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -32,16 +33,25 @@ const interestOptions = [
   "Technology", "Dancing", "Yoga", "Coffee", "Wine", "Hiking",
 ];
 
+const MAX_PHOTOS = 6;
+
+type UploadedPhoto = {
+  url: string;
+  publicId?: string;
+};
+
 export default function Onboarding() {
   const [currentStep, setCurrentStep] = useState(1);
   const [isSaving, setIsSaving] = useState(false);
+  const [isUploadingPhotos, setIsUploadingPhotos] = useState(false);
   const [saveError, setSaveError] = useState("");
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [formData, setFormData] = useState({
     birthday: "",
     gender: "",
     lookingFor: "",
     location: "",
-    photos: [] as string[],
+    photos: [] as UploadedPhoto[],
     interests: [] as string[],
     bio: "",
   });
@@ -58,6 +68,11 @@ export default function Onboarding() {
         firstName: user?.firstName || "",
         lastName: user?.lastName || "",
         imageUrl: user?.imageUrl || "",
+        photos: formData.photos.map((photo, index) => ({
+          url: photo.url,
+          publicId: photo.publicId || "",
+          isPrimary: index === 0,
+        })),
         birthday: formData.birthday,
         gender: formData.gender,
         lookingFor: formData.lookingFor,
@@ -88,6 +103,11 @@ export default function Onboarding() {
   };
 
   const handleNext = async () => {
+    if (currentStep === 2 && formData.photos.length < 2) {
+      setSaveError("Vui long tai len it nhat 2 anh truoc khi tiep tuc");
+      return;
+    }
+
     try {
       await saveOnboarding();
       if (currentStep < steps.length) {
@@ -113,6 +133,86 @@ export default function Onboarding() {
         ? prev.interests.filter((i) => i !== interest)
         : [...prev.interests, interest],
     }));
+  };
+
+  const openPhotoPicker = () => {
+    if (isUploadingPhotos) {
+      return;
+    }
+
+    fileInputRef.current?.click();
+  };
+
+  const setPrimaryPhoto = (index: number) => {
+    if (index <= 0 || index >= formData.photos.length) {
+      return;
+    }
+
+    setFormData((prev) => {
+      const nextPhotos = [...prev.photos];
+      const [selected] = nextPhotos.splice(index, 1);
+      nextPhotos.unshift(selected);
+      return { ...prev, photos: nextPhotos };
+    });
+  };
+
+  const removePhotoAt = (index: number) => {
+    setFormData((prev) => ({
+      ...prev,
+      photos: prev.photos.filter((_, currentIndex) => currentIndex !== index),
+    }));
+  };
+
+  const handlePhotoInputChange = async (event: ChangeEvent<HTMLInputElement>) => {
+    const selectedFiles = Array.from(event.target.files || []);
+    event.target.value = "";
+
+    if (selectedFiles.length === 0) {
+      return;
+    }
+
+    const availableSlots = MAX_PHOTOS - formData.photos.length;
+    if (availableSlots <= 0) {
+      setSaveError("Ban chi co the tai len toi da 6 anh");
+      return;
+    }
+
+    const filesToUpload = selectedFiles.slice(0, availableSlots);
+    setIsUploadingPhotos(true);
+    setSaveError("");
+
+    try {
+      const body = new FormData();
+      body.append("clerkId", user?.id || "");
+      filesToUpload.forEach((file) => body.append("photos", file));
+
+      const response = await fetch("/api/users/photos/upload", {
+        method: "POST",
+        body,
+      });
+
+      const data = (await response.json().catch(() => ({}))) as {
+        message?: string;
+        photos?: UploadedPhoto[];
+      };
+
+      if (!response.ok) {
+        throw new Error(data.message || "Tai anh that bai");
+      }
+
+      if (!Array.isArray(data.photos) || data.photos.length === 0) {
+        throw new Error("Khong nhan duoc anh sau khi tai len");
+      }
+
+      setFormData((prev) => ({
+        ...prev,
+        photos: [...prev.photos, ...data.photos],
+      }));
+    } catch (error) {
+      setSaveError(error instanceof Error ? error.message : "Tai anh that bai");
+    } finally {
+      setIsUploadingPhotos(false);
+    }
   };
 
   return (
@@ -240,30 +340,83 @@ export default function Onboarding() {
                 <p className="text-sm text-muted-foreground">
                   Add at least 2 photos to continue. Your first photo will be your main profile picture.
                 </p>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept="image/*"
+                  multiple
+                  className="hidden"
+                  onChange={handlePhotoInputChange}
+                />
                 <div className="grid grid-cols-3 gap-3">
-                  {[...Array(6)].map((_, i) => (
+                  {[...Array(MAX_PHOTOS)].map((_, i) => {
+                    const photo = formData.photos[i];
+
+                    return (
                     <div
                       key={i}
+                      onClick={() => {
+                        if (!photo) {
+                          openPhotoPicker();
+                          return;
+                        }
+
+                        if (i !== 0) {
+                          setPrimaryPhoto(i);
+                        }
+                      }}
                       className={cn(
-                        "aspect-[3/4] rounded-xl border-2 border-dashed flex items-center justify-center cursor-pointer transition-colors",
+                        "relative aspect-[3/4] rounded-xl border-2 border-dashed flex items-center justify-center cursor-pointer transition-colors overflow-hidden",
                         i === 0
                           ? "border-primary bg-primary/5"
                           : "border-border hover:border-primary hover:bg-primary/5"
                       )}
                     >
-                      <div className="text-center">
-                        {i === 0 ? (
-                          <Camera className="w-8 h-8 text-primary mx-auto" />
-                        ) : (
-                          <Plus className="w-6 h-6 text-muted-foreground mx-auto" />
-                        )}
-                        {i === 0 && (
-                          <span className="text-xs text-primary mt-1 block">Main</span>
-                        )}
-                      </div>
+                      {photo ? (
+                        <>
+                          <img
+                            src={photo.url}
+                            alt={`Photo ${i + 1}`}
+                            className="h-full w-full object-cover"
+                          />
+                          <button
+                            type="button"
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              removePhotoAt(i);
+                            }}
+                            className="absolute right-1 top-1 rounded-full bg-black/60 p-1 text-white"
+                            aria-label="Remove photo"
+                          >
+                            <X className="h-3.5 w-3.5" />
+                          </button>
+                          {i === 0 && (
+                            <span className="absolute bottom-1 left-1 rounded bg-primary px-2 py-0.5 text-[10px] text-primary-foreground">
+                              Main
+                            </span>
+                          )}
+                        </>
+                      ) : (
+                        <div className="text-center">
+                          {i === 0 ? (
+                            <Camera className="w-8 h-8 text-primary mx-auto" />
+                          ) : (
+                            <Plus className="w-6 h-6 text-muted-foreground mx-auto" />
+                          )}
+                          {i === 0 && (
+                            <span className="text-xs text-primary mt-1 block">Main</span>
+                          )}
+                        </div>
+                      )}
                     </div>
-                  ))}
+                    );
+                  })}
                 </div>
+                <p className="text-sm text-muted-foreground">
+                  {isUploadingPhotos
+                    ? "Dang tai anh len..."
+                    : `${formData.photos.length}/${MAX_PHOTOS} anh`}
+                </p>
               </div>
             )}
 
@@ -326,7 +479,12 @@ export default function Onboarding() {
           ) : (
             <div />
           )}
-          <Button variant="gradient" onClick={handleNext} className="gap-2" disabled={isSaving}>
+          <Button
+            variant="gradient"
+            onClick={handleNext}
+            className="gap-2"
+            disabled={isSaving || isUploadingPhotos}
+          >
             {currentStep === steps.length ? (
               <>
                 <Sparkles className="w-4 h-4" />
