@@ -1,13 +1,8 @@
-import { createClerkClient } from '@clerk/express';
+import { verifyToken } from '@clerk/express';
 import { ENV } from '../config/env.js';
 import { User } from '../models/user.model.js';
 
-const clerkClient = createClerkClient({ secretKey: ENV.CLERK_SECRET_KEY });
-
 /**
- * Socket.io Middleware — Xác thực kết nối bằng Clerk JWT Token.
- *
- * Luồng:
  * 1. Frontend gửi token qua `auth` handshake option
  * 2. Middleware decode token bằng Clerk Secret Key
  * 3. Tìm User trong DB bằng clerkId
@@ -26,7 +21,7 @@ export async function socketAuthMiddleware(socket, next) {
     }
 
     // Verify token với Clerk — trả về payload nếu hợp lệ
-    const payload = await clerkClient.verifyToken(token);
+    const payload = await verifyToken(token, { secretKey: ENV.CLERK_SECRET_KEY });
 
     if (!payload || !payload.sub) {
       return next(new Error('SOCKET_AUTH_ERROR: Invalid token'));
