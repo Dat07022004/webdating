@@ -35,13 +35,23 @@ app.use("/api/chat", chatRoutes);
 app.use("/api/upload", uploadRoutes);
 app.use("/api", healthRoutes);
 
-if (ENV.NODE_ENV === "production") {
-  app.use(express.static(path.join(_dirname, "../frontend/dist")));
+import fs from 'fs';
 
-  app.get("/{*any}", (req, res) => {
-    res.sendFile(path.join(_dirname, "../frontend", "dist", "index.html"));
+const frontendDistPath = path.join(_dirname, "../frontend/dist");
+// Only serve frontend if the front end build actually exists
+if (fs.existsSync(path.join(frontendDistPath, "index.html"))) {
+  app.use(express.static(frontendDistPath));
+
+  app.get("*", (req, res) => {
+    res.sendFile(path.join(frontendDistPath, "index.html"));
+  });
+} else {
+  // Fallback in case the wildcard above didn't get mounted (missing dist)
+  app.get('/', (req, res) => {
+    res.status(200).send("API Backend is running! (Note: The Frontend UI is not built or not served from this endpoint.)");
   });
 }
+
 const startServer = async () => {
   await connectDB();
   httpServer.listen(ENV.PORT, () => {
