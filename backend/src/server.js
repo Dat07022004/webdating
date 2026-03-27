@@ -12,15 +12,21 @@ import uploadRoutes from "./routes/upload.routes.js";
 import { functions, inngest } from "./config/inngest.js";
 import http from "http";
 import { initSocket } from "./socket/index.js";
+import cors from "cors";
 
 const app = express();
+app.use(cors({ origin: true, credentials: true })); // IMPORTANT: Required for frontend routing
 const httpServer = http.createServer(app);
 const io = initSocket(httpServer);
 
 const _dirname = path.resolve();
 
 app.use(express.json());
-app.use(clerkMiddleware()); // adds auth access on req via req.auth()
+app.use(clerkMiddleware({
+  secretKey: ENV.CLERK_SECRET_KEY,
+  publishableKey: ENV.CLERK_PUBLISHABLE_KEY,
+  clockSkewInMs: 60 * 1000 * 5 // 5 minutes leeway
+})); // adds auth access on req via req.auth()
 
 // Inngest requests require parsed JSON body.
 app.use("/api/inngest", serve({ client: inngest, functions }));

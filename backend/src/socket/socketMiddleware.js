@@ -21,7 +21,10 @@ export async function socketAuthMiddleware(socket, next) {
     }
 
     // Verify token với Clerk — trả về payload nếu hợp lệ
-    const payload = await verifyToken(token, { secretKey: ENV.CLERK_SECRET_KEY });
+    const payload = await verifyToken(token, { 
+        secretKey: ENV.CLERK_SECRET_KEY,
+        clockSkewInMs: 5 * 60 * 1000 // 5 minutes allow
+    });
 
     if (!payload || !payload.sub) {
       return next(new Error('SOCKET_AUTH_ERROR: Invalid token'));
