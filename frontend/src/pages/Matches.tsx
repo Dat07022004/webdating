@@ -57,8 +57,31 @@ export default function Matches() {
     fetchConnections();
   }, [getToken]);
 
-  const handleMessage = (userId: string) => {
-    navigate("/messages");
+  const handleMessage = async (userId: string) => {
+    try {
+      const token = await getToken();
+      if (!token) return;
+
+      const baseUrl = import.meta.env.VITE_API_URL ? import.meta.env.VITE_API_URL.replace(/\/$/, '') : 'http://localhost:3000';
+      const res = await fetch(baseUrl + '/api/chat/conversations', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ targetUserId: userId })
+      });
+
+      const data = await res.json();
+      if (data.success && data.data._id) {
+        navigate(`/messages?conversationId=${data.data._id}`);
+      } else {
+        navigate("/messages");
+      }
+    } catch (e) {
+      console.error("Error creating conversation:", e);
+      navigate("/messages");
+    }
   };
 
   const handleAccept = async (userId: string) => {
