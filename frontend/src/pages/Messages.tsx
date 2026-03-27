@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect } from "react";
+import { useSearchParams, useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
 import { Search, ArrowLeft, Phone, Video, MoreVertical, Verified } from "lucide-react";
 import { Layout } from "@/components/layout/Layout";
@@ -13,7 +14,19 @@ import { VideoCallModal } from "@/components/chat/VideoCallModal";
 import { format } from "date-fns";
 
 export default function Messages() {
-  const [selectedConversation, setSelectedConversation] = useState<string | null>(null);
+  const [searchParams] = useSearchParams();
+  const navigate = useNavigate();
+  const initConvId = searchParams.get("conversationId");
+
+  const [selectedConversation, setSelectedConversation] = useState<string | null>(initConvId);
+
+  // If we change the selected conversation manually, we should ideally drop the URL param or just leave it,
+  // but let's keep it simple. If initConvId changes from URL, we could sync it:
+  useEffect(() => {
+    if (initConvId) {
+      setSelectedConversation(initConvId);
+    }
+  }, [initConvId]);
   const [searchQuery, setSearchQuery] = useState("");
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
@@ -104,7 +117,10 @@ export default function Messages() {
                return (
                 <motion.button
                   key={conversation._id}
-                  onClick={() => setSelectedConversation(conversation._id)}
+                  onClick={() => {
+                    setSelectedConversation(conversation._id);
+                    navigate(`/messages?conversationId=${conversation._id}`);
+                  }}
                   className={cn(
                     "w-full p-4 flex items-start gap-3 hover:bg-secondary/50 transition-colors text-left",
                     selectedConversation === conversation._id && "bg-secondary"
@@ -167,7 +183,10 @@ export default function Messages() {
                         variant="ghost"
                         size="icon"
                         className="md:hidden"
-                        onClick={() => setSelectedConversation(null)}
+                        onClick={() => {
+                          setSelectedConversation(null);
+                          navigate("/messages");
+                        }}
                       >
                         <ArrowLeft className="w-5 h-5" />
                       </Button>
