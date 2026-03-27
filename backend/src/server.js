@@ -42,7 +42,8 @@ const frontendDistPath = path.join(_dirname, "../frontend/dist");
 if (fs.existsSync(path.join(frontendDistPath, "index.html"))) {
   app.use(express.static(frontendDistPath));
 
-  app.get("*", (req, res) => {
+  // Express 5 requires named wildcards for catch-all paths.
+  app.get("/{*path}", (req, res) => {
     res.sendFile(path.join(frontendDistPath, "index.html"));
   });
 } else {
