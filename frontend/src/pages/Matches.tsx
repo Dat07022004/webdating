@@ -1,98 +1,93 @@
-import { useState } from "react";
-import { motion } from "framer-motion";
+import { useEffect, useState } from "react";
+import { useAuth } from "@clerk/clerk-react";
+import { motion, AnimatePresence } from "framer-motion";
 import { Heart, Sparkles } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { Layout } from "@/components/layout/Layout";
 import { MatchCard } from "@/components/cards/MatchCard";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Button } from "@/components/ui/button";
+import { useToast } from "@/hooks/use-toast";
 
-const mockMatches = [
-  {
-    id: "1",
-    name: "Emma",
-    age: 26,
-    image: "https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=200&h=200&fit=crop",
-    lastActive: "2 min ago",
-    isOnline: true,
-    isNew: true,
-  },
-  {
-    id: "2",
-    name: "Sophia",
-    age: 24,
-    image: "https://images.unsplash.com/photo-1524504388940-b1c1722653e1?w=200&h=200&fit=crop",
-    lastActive: "1 hour ago",
-    isOnline: false,
-    isNew: true,
-  },
-  {
-    id: "3",
-    name: "Olivia",
-    age: 28,
-    image: "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=200&h=200&fit=crop",
-    lastActive: "3 hours ago",
-    isOnline: true,
-    isNew: false,
-  },
-  {
-    id: "4",
-    name: "Ava",
-    age: 25,
-    image: "https://images.unsplash.com/photo-1517841905240-472988babdf9?w=200&h=200&fit=crop",
-    lastActive: "Yesterday",
-    isOnline: false,
-    isNew: false,
-  },
-  {
-    id: "5",
-    name: "Mia",
-    age: 27,
-    image: "https://images.unsplash.com/photo-1488426862026-3ee34a7d66df?w=200&h=200&fit=crop",
-    lastActive: "2 days ago",
-    isOnline: false,
-    isNew: false,
-  },
-  {
-    id: "6",
-    name: "Isabella",
-    age: 23,
-    image: "https://images.unsplash.com/photo-1529626455594-4ff0802cfb7e?w=200&h=200&fit=crop",
-    lastActive: "Online now",
-    isOnline: true,
-    isNew: false,
-  },
-];
-
-const mockLikes = [
-  {
-    id: "7",
-    name: "Charlotte",
-    age: 26,
-    image: "https://images.unsplash.com/photo-1502823403499-6ccfcf4fb453?w=200&h=200&fit=crop",
-    lastActive: "1 hour ago",
-    isOnline: false,
-    isNew: true,
-  },
-  {
-    id: "8",
-    name: "Amelia",
-    age: 25,
-    image: "https://images.unsplash.com/photo-1531746020798-e6953c6e8e04?w=200&h=200&fit=crop",
-    lastActive: "2 hours ago",
-    isOnline: true,
-    isNew: true,
-  },
-];
+interface MatchUser {
+  id: string;
+  name: string;
+  age: number;
+  image: string;
+  isOnline: boolean;
+  lastActive: string;
+  matchPercentage?: number;
+}
 
 export default function Matches() {
   const navigate = useNavigate();
+  const { getToken } = useAuth();
+  const { toast } = useToast();
+
+  const [matches, setMatches] = useState<MatchUser[]>([]);
+  const [likes, setLikes] = useState<MatchUser[]>([]);
+  const [sent, setSent] = useState<{status: string, user: MatchUser}[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+
+  const fetchConnections = async () => {
+    try {
+      const token = await getToken();
+      if (!token) return;
+
+      const baseUrl = import.meta.env.VITE_API_URL ? import.meta.env.VITE_API_URL.replace(/\/$/, '') : 'http://localhost:3000';
+      const res = await fetch(baseUrl + '/api/users/connections', {
+        headers: {
+          Authorization: `Bearer ${token}`
+        }
+      });
+      const data = await res.json();
+      if (data) {
+        setMatches(data.matches || []);
+        setLikes(data.likes || []);
+        setSent(data.sent || []);
+      }
+    } catch (error) {
+      console.error("Failed to load connections:", error);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchConnections();
+  }, [getToken]);
 
   const handleMessage = (userId: string) => {
     navigate("/messages");
   };
 
-  const newMatches = mockMatches.filter((m) => m.isNew);
-  const allMatches = mockMatches.filter((m) => !m.isNew);
+  const handleAccept = async (userId: string) => {
+    try {
+      const token = await getToken();
+      if (!token) return;
+
+      const baseUrl = import.meta.env.VITE_API_URL ? import.meta.env.VITE_API_URL.replace(/\/$/, '') : 'http://localhost:3000';
+      const res = await fetch(baseUrl + '/api/users/action', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ targetUserId: userId, action: 'like' })
+      });
+
+      if (res.ok) {
+        toast({
+          title: "It's a Match! 🎉",
+          description: "You can now send them a message.",
+        });
+        // Refresh the lists
+        fetchConnections();
+      }
+    } catch (e) {
+      console.error(e);
+    }
+  };
 
   return (
     <Layout isAuthenticated>
@@ -110,51 +105,27 @@ export default function Matches() {
           </div>
 
           <Tabs defaultValue="matches" className="space-y-6">
-            <TabsList className="grid w-full max-w-md grid-cols-2">
+            <TabsList className="grid w-full max-w-xl grid-cols-3">
               <TabsTrigger value="matches" className="gap-2">
                 <Heart className="w-4 h-4" />
-                Matches ({mockMatches.length})
+                Matches ({matches.length})
               </TabsTrigger>
               <TabsTrigger value="likes" className="gap-2">
                 <Sparkles className="w-4 h-4" />
-                Likes ({mockLikes.length})
+                Likes ({likes.length})
+              </TabsTrigger>
+              <TabsTrigger value="sent" className="gap-2">
+                <Sparkles className="w-4 h-4" />
+                Sent ({sent.length})
               </TabsTrigger>
             </TabsList>
 
             <TabsContent value="matches" className="space-y-8">
-              {/* New Matches */}
-              {newMatches.length > 0 && (
-                <section>
-                  <h2 className="font-serif text-xl font-semibold text-foreground mb-4 flex items-center gap-2">
-                    <Sparkles className="w-5 h-5 text-gold" />
-                    New Matches
-                  </h2>
-                  <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4">
-                    {newMatches.map((match, i) => (
-                      <motion.div
-                        key={match.id}
-                        initial={{ opacity: 0, y: 20 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        transition={{ delay: i * 0.1 }}
-                      >
-                        <MatchCard
-                          user={match}
-                          isNew
-                          onMessage={() => handleMessage(match.id)}
-                        />
-                      </motion.div>
-                    ))}
-                  </div>
-                </section>
-              )}
-
-              {/* All Matches */}
-              <section>
-                <h2 className="font-serif text-xl font-semibold text-foreground mb-4">
-                  All Matches
-                </h2>
+              {isLoading ? (
+                  <p className="text-muted-foreground text-center">Loading matches...</p>
+              ) : matches.length > 0 ? (
                 <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4">
-                  {allMatches.map((match, i) => (
+                  {matches.map((match, i) => (
                     <motion.div
                       key={match.id}
                       initial={{ opacity: 0, y: 20 }}
@@ -168,37 +139,97 @@ export default function Matches() {
                     </motion.div>
                   ))}
                 </div>
-              </section>
+              ) : (
+                <div className="rounded-2xl bg-card p-8 text-center shadow-card border border-border">
+                  <Heart className="w-12 h-12 text-muted-foreground mx-auto mb-4 opacity-30" />
+                  <p className="text-muted-foreground">No confirmed matches yet. Keep exploring!</p>
+                </div>
+              )}
             </TabsContent>
 
             <TabsContent value="likes">
-              <div className="text-center py-12">
-                <div className="w-20 h-20 rounded-full gradient-gold flex items-center justify-center mx-auto mb-4">
-                  <Sparkles className="w-10 h-10 text-primary-foreground" />
-                </div>
-                <h3 className="font-serif text-2xl font-semibold text-foreground mb-2">
-                  {mockLikes.length} people like you
-                </h3>
-                <p className="text-muted-foreground max-w-md mx-auto mb-6">
-                  Upgrade to Premium to see who likes you and match with them instantly
-                </p>
-                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4 max-w-2xl mx-auto">
-                  {mockLikes.map((like) => (
-                    <div key={like.id} className="relative">
-                      <img
-                        src={like.image}
-                        alt={like.name}
-                        className="w-full aspect-square rounded-2xl object-cover blur-lg"
-                      />
-                      <div className="absolute inset-0 flex items-center justify-center">
-                        <div className="w-12 h-12 rounded-full gradient-gold flex items-center justify-center">
-                          <Heart className="w-6 h-6 text-primary-foreground" />
+              {isLoading ? (
+                  <p className="text-muted-foreground text-center">Loading likes...</p>
+              ) : likes.length > 0 ? (
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                  {likes.map((like, i) => (
+                    <motion.div
+                      key={like.id}
+                      initial={{ opacity: 0, y: 20 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{ delay: i * 0.08 }}
+                      className="rounded-2xl bg-card p-4 shadow-card border border-border"
+                    >
+                      <div className="flex items-center gap-3">
+                        <img
+                          src={like.image}
+                          alt={like.name}
+                          className="w-16 h-16 rounded-full object-cover ring-2 ring-primary"
+                        />
+                        <div>
+                          <h3 className="font-semibold text-foreground">
+                            {like.name}, {like.age}
+                          </h3>
+                          <p className="text-sm text-muted-foreground">{like.lastActive}</p>
                         </div>
                       </div>
-                    </div>
+
+                      <Button
+                        className="w-full mt-4 gap-2"
+                        variant="default"
+                        onClick={() => handleAccept(like.id)}
+                      >
+                        <Heart className="w-4 h-4" />
+                        Match With {like.name}
+                      </Button>
+                    </motion.div>
                   ))}
                 </div>
-              </div>
+              ) : (
+                <div className="rounded-2xl bg-card p-8 text-center shadow-card border border-border">
+                  <p className="text-muted-foreground">No incoming likes right now.</p>
+                </div>
+              )}
+            </TabsContent>
+
+            <TabsContent value="sent">
+              {isLoading ? (
+                  <p className="text-muted-foreground text-center">Loading sent requests...</p>
+              ) : sent.length > 0 ? (
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                  {sent.map((item, i) => (
+                    <motion.div
+                      key={item.user.id}
+                      initial={{ opacity: 0, y: 20 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{ delay: i * 0.08 }}
+                      className="rounded-2xl bg-card p-4 shadow-card border border-border opacity-80 hover:opacity-100 transition-opacity"
+                    >
+                      <div className="flex items-center gap-3">
+                        <img
+                          src={item.user.image}
+                          alt={item.user.name}
+                          className="w-16 h-16 rounded-full object-cover grayscale transition-all duration-300 hover:grayscale-0"
+                        />
+                        <div>
+                          <h3 className="font-semibold text-foreground">
+                            {item.user.name}, {item.user.age}
+                          </h3>
+                          <p className="text-sm text-yellow-600 dark:text-yellow-500 font-medium">Pending accept</p>
+                        </div>
+                      </div>
+
+                      <Button className="w-full mt-4" variant="secondary" disabled>
+                        Waiting for response
+                      </Button>
+                    </motion.div>
+                  ))}
+                </div>
+              ) : (
+                <div className="rounded-2xl bg-card p-8 text-center shadow-card border border-border">
+                  <p className="text-muted-foreground">You have not sent any requests yet.</p>
+                </div>
+              )}
             </TabsContent>
           </Tabs>
         </div>
