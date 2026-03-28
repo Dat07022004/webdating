@@ -46,6 +46,10 @@ export const useWebRTC = () => {
   const pendingIncomingCall = useRef<IncomingCallPayload | null>(null);
   const activeCallIdRef = useRef<string | null>(null);
   const pendingIceCandidates = useRef<RTCIceCandidateInit[]>([]);
+  const ringTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const connectingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(
+    null,
+  );
 
   const remoteUserIdRef = useRef<string | null>(null);
   const callStateRef = useRef<CallState>("idle");
@@ -112,7 +116,21 @@ export const useWebRTC = () => {
     [socket],
   );
 
+  const clearTimers = useCallback(() => {
+    if (ringTimeoutRef.current) {
+      clearTimeout(ringTimeoutRef.current);
+      ringTimeoutRef.current = null;
+    }
+
+    if (connectingTimeoutRef.current) {
+      clearTimeout(connectingTimeoutRef.current);
+      connectingTimeoutRef.current = null;
+    }
+  }, []);
+
   const cleanup = useCallback(() => {
+    clearTimers();
+
     if (localStream.current) {
       localStream.current.getTracks().forEach((track) => {
         track.stop();
@@ -133,7 +151,7 @@ export const useWebRTC = () => {
 
     if (localVideoRef.current) localVideoRef.current.srcObject = null;
     clearRemoteMediaElement();
-  }, []);
+  }, [clearTimers]);
 
   const createPeerConnection = useCallback(
     (callId: string) => {
@@ -167,12 +185,21 @@ export const useWebRTC = () => {
       pc.onconnectionstatechange = () => {
         const connectionState = pc.connectionState;
         if (connectionState === "connected") {
+          clearTimers();
           setCallStateSafe("in_call");
         }
 
-        // Do not auto-cleanup on transient states while negotiating.
-        if (connectionState === "closed") {
-          setCallStateSafe("idle");
+        if (
+          (connectionState === "failed" ||
+            connectionState === "disconnected") &&
+          (callStateRef.current === "connecting" ||
+            callStateRef.current === "in_call")
+        ) {
+          cleanup();
+        }
+
+        if (connectionState === "closed" && callStateRef.current !== "idle") {
+          cleanup();
         }
       };
 
@@ -192,7 +219,7 @@ export const useWebRTC = () => {
       peerConnection.current = pc;
       return pc;
     },
-    [cleanup, emitEvent],
+    [cleanup, clearTimers, emitEvent],
   );
 
   const initLocalStream = async () => {
@@ -234,6 +261,14 @@ export const useWebRTC = () => {
     setCallStateSafe("calling");
 
     emitEvent("call-user", { targetUserId });
+
+    // Ring timeout: auto-stop if nobody accepts in 30s.
+    clearTimers();
+    ringTimeoutRef.current = setTimeout(() => {
+      if (callStateRef.current === "calling") {
+        cleanup();
+      }
+    }, 30_000);
   };
 
   const answerCall = async () => {
@@ -257,6 +292,13 @@ export const useWebRTC = () => {
     });
 
     pendingIncomingCall.current = null;
+
+    clearTimers();
+    connectingTimeoutRef.current = setTimeout(() => {
+      if (callStateRef.current === "connecting") {
+        cleanup();
+      }
+    }, 20_000);
   };
 
   const rejectCall = useCallback(() => {
@@ -310,6 +352,8 @@ export const useWebRTC = () => {
           : `legacy-${Date.now()}-${Math.random()}`;
       const callerUserId = data.callerUserId;
 
+      if (!callerUserId) return;
+
       if (callStateRef.current !== "idle") {
         emitEvent("call-rejected", { callId, callerUserId, reason: "busy" });
         return;
@@ -320,12 +364,17 @@ export const useWebRTC = () => {
       setRemoteUserIdSafe(callerUserId);
       setIncomingCallerId(callerUserId);
       setCallStateSafe("receiving");
+
+      clearTimers();
     };
 
     const handleCallAccepted = async (data: CallAcceptedPayload) => {
       if (callStateRef.current !== "calling") return;
 
       const { callId, calleeUserId } = data;
+      if (!callId) return;
+
+      clearTimers();
       activeCallIdRef.current = callId;
       setRemoteUserIdSafe(calleeUserId || remoteUserIdRef.current);
       setCallStateSafe("connecting");
@@ -338,14 +387,27 @@ export const useWebRTC = () => {
       }
 
       const pc = createPeerConnection(callId);
-      const offer = await pc.createOffer();
-      await pc.setLocalDescription(offer);
+      try {
+        const offer = await pc.createOffer();
+        await pc.setLocalDescription(offer);
 
-      emitEvent("webrtc-offer", { callId, offer });
+        emitEvent("webrtc-offer", { callId, offer });
+      } catch (error) {
+        console.error("[WebRTC] Failed creating/sending offer:", error);
+        cleanup();
+        return;
+      }
+
+      connectingTimeoutRef.current = setTimeout(() => {
+        if (callStateRef.current === "connecting") {
+          cleanup();
+        }
+      }, 20_000);
     };
 
     const handleOffer = async (data: OfferPayload) => {
       if (!data.callId) return;
+      if (!data.offer) return;
       if (activeCallIdRef.current && activeCallIdRef.current !== data.callId)
         return;
 
@@ -353,13 +415,26 @@ export const useWebRTC = () => {
       setCallStateSafe("connecting");
 
       const pc = createPeerConnection(data.callId);
-      await pc.setRemoteDescription(new RTCSessionDescription(data.offer));
-      await flushPendingIceCandidates();
+      try {
+        await pc.setRemoteDescription(new RTCSessionDescription(data.offer));
+        await flushPendingIceCandidates();
 
-      const answer = await pc.createAnswer();
-      await pc.setLocalDescription(answer);
+        const answer = await pc.createAnswer();
+        await pc.setLocalDescription(answer);
 
-      emitEvent("webrtc-answer", { callId: data.callId, answer });
+        emitEvent("webrtc-answer", { callId: data.callId, answer });
+      } catch (error) {
+        console.error("[WebRTC] Failed handling offer:", error);
+        cleanup();
+        return;
+      }
+
+      clearTimers();
+      connectingTimeoutRef.current = setTimeout(() => {
+        if (callStateRef.current === "connecting") {
+          cleanup();
+        }
+      }, 20_000);
     };
 
     const handleAnswer = async (
@@ -376,12 +451,20 @@ export const useWebRTC = () => {
       )
         return;
 
+      if (!data.answer) return;
+
       if (peerConnection.current) {
-        await peerConnection.current.setRemoteDescription(
-          new RTCSessionDescription(data.answer),
-        );
-        await flushPendingIceCandidates();
-        setCallStateSafe("in_call");
+        try {
+          await peerConnection.current.setRemoteDescription(
+            new RTCSessionDescription(data.answer),
+          );
+          await flushPendingIceCandidates();
+          clearTimers();
+          setCallStateSafe("in_call");
+        } catch (error) {
+          console.error("[WebRTC] Failed handling answer:", error);
+          cleanup();
+        }
       }
     };
 
@@ -403,6 +486,7 @@ export const useWebRTC = () => {
         return;
 
       const { candidate } = data;
+      if (!candidate) return;
 
       if (
         !peerConnection.current ||
@@ -429,6 +513,16 @@ export const useWebRTC = () => {
       cleanup();
     };
 
+    const handleCallRejected = () => {
+      cleanup();
+    };
+
+    const handleSocketDisconnect = () => {
+      if (callStateRef.current !== "idle") {
+        cleanup();
+      }
+    };
+
     socket.on("incoming-call", handleIncomingCall);
     socket.on("incoming_call", handleIncomingCall);
 
@@ -443,9 +537,10 @@ export const useWebRTC = () => {
 
     socket.on("call-ended", handleCallEnded);
     socket.on("call_ended", handleCallEnded);
-    socket.on("call-rejected", handleCallEnded);
-    socket.on("call_rejected", handleCallEnded);
+    socket.on("call-rejected", handleCallRejected);
+    socket.on("call_rejected", handleCallRejected);
     socket.on("call-failed", handleCallFailed);
+    socket.on("disconnect", handleSocketDisconnect);
 
     return () => {
       socket.off("incoming-call", handleIncomingCall);
@@ -462,9 +557,10 @@ export const useWebRTC = () => {
 
       socket.off("call-ended", handleCallEnded);
       socket.off("call_ended", handleCallEnded);
-      socket.off("call-rejected", handleCallEnded);
-      socket.off("call_rejected", handleCallEnded);
+      socket.off("call-rejected", handleCallRejected);
+      socket.off("call_rejected", handleCallRejected);
       socket.off("call-failed", handleCallFailed);
+      socket.off("disconnect", handleSocketDisconnect);
     };
   }, [
     socket,
