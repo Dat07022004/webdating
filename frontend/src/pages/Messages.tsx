@@ -262,7 +262,11 @@ export default function Messages() {
                       </div>
                     </div>
                     <div className="flex items-center gap-1">
-                      <Button variant="ghost" size="icon">
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={handleVideoCall}
+                      >
                         <Phone className="w-5 h-5" />
                       </Button>
                       <Button

@@ -187,6 +187,11 @@ export function registerChatHandlers(io, socket) {
       return;
     }
 
+    const existingSession = getSessionByParticipants(userId, targetUserId);
+    if (existingSession && existingSession.status === "ringing") {
+      return;
+    }
+
     const callId = randomUUID();
     const session = {
       callId,

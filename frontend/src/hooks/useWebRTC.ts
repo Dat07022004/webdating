@@ -11,6 +11,7 @@ export type CallState =
 type IncomingCallPayload = {
   callId: string;
   callerUserId: string;
+  offer?: RTCSessionDescriptionInit;
 };
 
 type CallAcceptedPayload = {
@@ -46,6 +47,7 @@ export const useWebRTC = () => {
   const pendingIncomingCall = useRef<IncomingCallPayload | null>(null);
   const activeCallIdRef = useRef<string | null>(null);
   const pendingIceCandidates = useRef<RTCIceCandidateInit[]>([]);
+  const legacyOfferRef = useRef<RTCSessionDescriptionInit | null>(null);
 
   const remoteUserIdRef = useRef<string | null>(null);
   const callStateRef = useRef<CallState>("idle");
@@ -127,6 +129,7 @@ export const useWebRTC = () => {
     pendingIncomingCall.current = null;
     pendingIceCandidates.current = [];
     activeCallIdRef.current = null;
+    legacyOfferRef.current = null;
     setCallStateSafe("idle");
     setRemoteUserIdSafe(null);
     setIncomingCallerId(null);
@@ -155,6 +158,14 @@ export const useWebRTC = () => {
           callId,
           candidate: event.candidate,
         });
+
+        if (remoteUserIdRef.current) {
+          emitEvent("ice_candidate", {
+            callId,
+            targetUserId: remoteUserIdRef.current,
+            candidate: event.candidate,
+          });
+        }
       };
 
       pc.ontrack = (event) => {
@@ -199,6 +210,18 @@ export const useWebRTC = () => {
   );
 
   const initLocalStream = async () => {
+    if (localStream.current) {
+      const hasLiveTrack = localStream.current
+        .getTracks()
+        .some((track) => track.readyState === "live");
+      if (hasLiveTrack) {
+        if (localVideoRef.current) {
+          localVideoRef.current.srcObject = localStream.current;
+        }
+        return true;
+      }
+    }
+
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
         video: true,
@@ -218,10 +241,21 @@ export const useWebRTC = () => {
   const startCall = async (targetUserId: string) => {
     if (!socket || callStateRef.current !== "idle") return;
 
+    const success = await initLocalStream();
+    if (!success) return;
+
     setRemoteUserIdSafe(targetUserId);
     setCallStateSafe("calling");
 
+    // Single-PC legacy-compatible offer path: create one offer and reuse same PC.
+    const legacyCallId = `legacy-${Date.now()}-${Math.random()}`;
+    activeCallIdRef.current = legacyCallId;
+    const pc = createPeerConnection(legacyCallId);
+    const offer = await pc.createOffer();
+    await pc.setLocalDescription(offer);
+
     emitEvent("call-user", { targetUserId });
+    emitEvent("call_user", { targetUserId, offer });
   };
 
   const answerCall = async () => {
@@ -237,12 +271,30 @@ export const useWebRTC = () => {
     const { callId } = pendingIncomingCall.current;
     activeCallIdRef.current = callId;
     setCallStateSafe("connecting");
-    createPeerConnection(callId);
+    const pc = createPeerConnection(callId);
 
     emitEvent("call-accepted", {
       callId,
       callerUserId: remoteUserIdRef.current,
     });
+
+    if (legacyOfferRef.current) {
+      await pc.setRemoteDescription(
+        new RTCSessionDescription(legacyOfferRef.current),
+      );
+      await flushPendingIceCandidates();
+
+      const answer = await pc.createAnswer();
+      await pc.setLocalDescription(answer);
+
+      emitEvent("answer_call", {
+        callerUserId: remoteUserIdRef.current,
+        answer,
+      });
+
+      legacyOfferRef.current = null;
+      setCallStateSafe("in_call");
+    }
 
     pendingIncomingCall.current = null;
   };
@@ -301,11 +353,17 @@ export const useWebRTC = () => {
 
       if (callStateRef.current !== "idle") {
         emitEvent("call-rejected", { callId, callerUserId, reason: "busy" });
+        emitEvent("call_rejected", { callerUserId });
         return;
       }
 
-      pendingIncomingCall.current = { callId, callerUserId };
+      pendingIncomingCall.current = {
+        callId,
+        callerUserId,
+        offer: data.offer,
+      };
       activeCallIdRef.current = callId;
+      legacyOfferRef.current = data.offer ?? null;
       setRemoteUserIdSafe(callerUserId);
       setIncomingCallerId(callerUserId);
       setCallStateSafe("receiving");
@@ -327,10 +385,12 @@ export const useWebRTC = () => {
       }
 
       const pc = createPeerConnection(callId);
-      const offer = await pc.createOffer();
-      await pc.setLocalDescription(offer);
+      if (!pc.localDescription) {
+        const offer = await pc.createOffer();
+        await pc.setLocalDescription(offer);
+      }
 
-      emitEvent("webrtc-offer", { callId, offer });
+      emitEvent("webrtc-offer", { callId, offer: pc.localDescription });
     };
 
     const handleOffer = async (data: OfferPayload) => {
@@ -422,6 +482,7 @@ export const useWebRTC = () => {
     socket.on("incoming_call", handleIncomingCall);
 
     socket.on("call-accepted", handleCallAccepted);
+    socket.on("call_answered", handleCallAccepted);
 
     socket.on("webrtc-offer", handleOffer);
     socket.on("webrtc-answer", handleAnswer);
@@ -441,6 +502,7 @@ export const useWebRTC = () => {
       socket.off("incoming_call", handleIncomingCall);
 
       socket.off("call-accepted", handleCallAccepted);
+      socket.off("call_answered", handleCallAccepted);
 
       socket.off("webrtc-offer", handleOffer);
       socket.off("webrtc-answer", handleAnswer);
