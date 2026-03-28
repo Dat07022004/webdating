@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { Link, useLocation } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
-import { Heart, MessageCircle, Bell, User, Menu, X, Sparkles, MapPin, CalendarDays, Zap } from "lucide-react";
+import { Heart, MessageCircle, Bell, User, Menu, X, Sparkles, MapPin, CalendarDays, Zap, Crown } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
@@ -31,6 +31,7 @@ export const Navbar = ({ isAuthenticated = false }: NavbarProps) => {
       { to: "/date-spots", label: "Date Spots", icon: MapPin },
       { to: "/appointments", label: "Dates", icon: CalendarDays },
       { to: "/notifications", label: "Activity", icon: Bell, badge: 5 },
+      { to: "/premium", label: "Premium", icon: Crown },
       { to: "/profile", label: "Profile", icon: User },
     ]
     : [];

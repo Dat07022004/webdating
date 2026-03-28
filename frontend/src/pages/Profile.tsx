@@ -20,7 +20,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { Separator } from "@/components/ui/separator";
-import { UserButton, useClerk, useUser } from "@clerk/clerk-react";
+import { UserButton, useClerk, useUser, useAuth } from "@clerk/clerk-react";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
@@ -81,6 +81,7 @@ const genderOptions = ["Man", "Woman", "Other"];
 
 export default function Profile() {
   const { user, isLoaded } = useUser();
+  const { getToken } = useAuth();
   const clerk = useClerk();
   const { toast } = useToast();
   const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -92,6 +93,8 @@ export default function Profile() {
   const [isSaving, setIsSaving] = useState(false);
   const [isUploadingPhotos, setIsUploadingPhotos] = useState(false);
   const [newInterest, setNewInterest] = useState("");
+  const [premiumPlan, setPremiumPlan] = useState<{ plan: string; expiresAt: string | null; isActive: boolean } | null>(null);
+  const [isLoadingPlan, setIsLoadingPlan] = useState(true);
 
   const activeProfile = isEditing ? draft : profile;
 
@@ -158,6 +161,59 @@ export default function Profile() {
 
     void loadProfile();
   }, [isLoaded, toast, user?.id, user?.primaryEmailAddress?.emailAddress]);
+
+  useEffect(() => {
+    if (!isLoaded) {
+      return;
+    }
+
+    const loadPlan = async () => {
+      setIsLoadingPlan(true);
+
+      try {
+        const token = await getToken();
+        if (!token) return;
+
+        const baseUrl = import.meta.env.VITE_API_URL
+          ? import.meta.env.VITE_API_URL.replace(/\/$/, "")
+          : "http://localhost:3000";
+
+        const response = await fetch(`${baseUrl}/api/premium/status`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        const data = (await response.json().catch(() => ({}))) as {
+          plan?: string;
+          expiresAt?: string | null;
+          isActive?: boolean;
+        };
+
+        if (response.ok) {
+          setPremiumPlan({
+            plan: data.plan || "none",
+            expiresAt: data.expiresAt || null,
+            isActive: Boolean(data.isActive),
+          });
+        }
+      } finally {
+        setIsLoadingPlan(false);
+      }
+    };
+
+    void loadPlan();
+  }, [getToken, isLoaded]);
+
+  const formatPlanLabel = (plan: string) => {
+    if (plan === "platinum") return "Platinum";
+    if (plan === "gold") return "Gold";
+    return "Basic";
+  };
+
+  const formatDate = (value: string | null) => {
+    if (!value) return "";
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return "";
+    return date.toLocaleDateString("vi-VN", { year: "numeric", month: "2-digit", day: "2-digit" });
+  };
 
   const addInterest = () => {
     const value = newInterest.trim();
@@ -511,6 +567,26 @@ export default function Profile() {
               <p className="text-xs text-muted-foreground mt-2">
                 Complete your profile to get more matches!
               </p>
+            </div>
+
+            {/* Premium Status */}
+            <div className="mb-6 rounded-2xl border border-border bg-muted/30 p-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm text-muted-foreground">Current plan</p>
+                  <p className="text-lg font-semibold text-foreground">
+                    {isLoadingPlan ? "Loading..." : formatPlanLabel(premiumPlan?.plan || "none")}
+                  </p>
+                  {!isLoadingPlan && premiumPlan?.isActive && premiumPlan?.expiresAt && (
+                    <p className="text-xs text-muted-foreground mt-1">
+                      Expires on {formatDate(premiumPlan.expiresAt)}
+                    </p>
+                  )}
+                </div>
+                <Badge className={premiumPlan?.isActive ? "gradient-primary border-0" : "bg-slate-200 text-slate-700 border-0"}>
+                  {premiumPlan?.isActive ? "Premium Active" : "Basic"}
+                </Badge>
+              </div>
             </div>
 
             {/* Photo Gallery */}

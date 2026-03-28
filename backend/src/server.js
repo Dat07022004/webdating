@@ -8,6 +8,7 @@ import userRoutes from "./routes/user.routes.js";
 import healthRoutes from "./routes/health.routes.js";
 import chatRoutes from "./routes/chat.routes.js";
 import uploadRoutes from "./routes/upload.routes.js";
+import premiumRoutes from "./routes/premium.routes.js";
 
 import { functions, inngest } from "./config/inngest.js";
 import http from "http";
@@ -33,6 +34,7 @@ app.use("/api/inngest", serve({ client: inngest, functions }));
 app.use("/api/users", userRoutes);
 app.use("/api/chat", chatRoutes);
 app.use("/api/upload", uploadRoutes);
+app.use("/api/premium", premiumRoutes);
 app.use("/api", healthRoutes);
 
 import fs from 'fs';
@@ -60,6 +62,5 @@ const startServer = async () => {
   });
 };
 startServer();
-
 
 export default app;

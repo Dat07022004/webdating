@@ -93,6 +93,14 @@ const userSchema = new mongoose.Schema({
         allowVideoCall: { type: Boolean, default: true },
         allowGeoDiscovery: { type: Boolean, default: true }
     },
+    premiumPlan: {
+        type: {
+            type: String,
+            enum: ['none', 'gold', 'platinum'],
+            default: 'none'
+        },
+        expiresAt: { type: Date, default: null }
+    },
     status: {
         online: { type: Boolean, default: false },
         lastSeen: { type: Date, default: Date.now }
