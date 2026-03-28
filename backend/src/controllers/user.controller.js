@@ -152,26 +152,38 @@ export const getDiscoverUsers = async (req, res) => {
                      candidateUserId: c._id,
                      score: 0.8
                  }));
-                 await MatchSuggestion.insertMany(suggestionDocs);
+                 try {
+                     await MatchSuggestion.insertMany(suggestionDocs);
+                 } catch (insertError) {
+                     // Log error but don't fail - suggestions are optional, we still return the candidates
+                     console.warn('Failed to insert MatchSuggestion records:', insertError.message);
+                 }
+            } else {
+                console.log(`No candidates found for user ${currentUser._id}. Total excluded: ${excludedIds.length}`);
             }
         }
 
-        const mappedUsers = candidates.map(user => ({
-            id: user._id.toString(), // MONGODB ID!
-            name: user.profile?.personalInfo?.name || user.username || 'Unknown',
-            age: user.profile?.personalInfo?.age || 21,
-            location: user.profile?.personalInfo?.locationText || 'Unknown location',
-            bio: user.profile?.bio || 'No bio yet.',
-            image: user.profile?.avatarUrl || user.profile?.photos?.find(p => p.isPrimary)?.url || 'https://images.unsplash.com/photo-1544005313-94ddf0286df2?w=400&h=500&fit=crop',
-            interests: user.profile?.interests || [],
-            verified: true,
-            distance: 'Just now'
-        }));
+        const mappedUsers = candidates
+            .filter(user => user && user._id) // Ensure valid user objects
+            .map(user => ({
+                id: user._id.toString(), // MONGODB ID!
+                name: user.profile?.personalInfo?.name || user.username || 'Unknown',
+                age: user.profile?.personalInfo?.age || 21,
+                location: user.profile?.personalInfo?.locationText || 'Unknown location',
+                bio: user.profile?.bio || 'No bio yet.',
+                image: user.profile?.avatarUrl || user.profile?.photos?.find(p => p.isPrimary)?.url || 'https://images.unsplash.com/photo-1544005313-94ddf0286df2?w=400&h=500&fit=crop',
+                interests: user.profile?.interests || [],
+                verified: true,
+                distance: 'Just now'
+            }));
 
         return res.status(200).json({ users: mappedUsers });
     } catch (error) {
-        console.error('Discover user fetch failed:', error);
-        return res.status(500).json({ message: 'Failed to fetch discover users' });
+        console.error('Discover user fetch failed:', error.message, error.stack);
+        const errorMessage = ENV.NODE_ENV === 'production' 
+            ? 'Failed to fetch discover users' 
+            : error?.message || 'Failed to fetch discover users';
+        return res.status(500).json({ message: errorMessage });
     }
 };
 

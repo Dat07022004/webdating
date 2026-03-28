@@ -99,7 +99,10 @@ export const useChat = (activeConversationId?: string | null) => {
     const handleReceiveMessage = (message: Message) => {
       // Add message if it belongs to the current conversation
       if (message.conversationId === activeConversationId) {
-        setMessages(prev => [...prev, message]);
+        setMessages(prev => {
+          if (prev.some(m => m._id === message._id)) return prev;
+          return [...prev, message];
+        });
         // Also emit seen event immediately if we are viewing it
         socket.emit('mark_as_seen', {
           messageIds: [message._id],
@@ -148,7 +151,10 @@ export const useChat = (activeConversationId?: string | null) => {
     }, (res: any) => {
       if (res.status === 'success') {
         const message = res.message as Message;
-        setMessages(prev => [...prev, message]);
+        setMessages(prev => {
+          if (prev.some(m => m._id === message._id)) return prev;
+          return [...prev, message];
+        });
         setConversations(prev => {
           const updated = prev.map(conv => {
               if (conv._id === message.conversationId) {
