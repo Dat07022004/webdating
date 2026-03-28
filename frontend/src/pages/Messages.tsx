@@ -1,7 +1,14 @@
 import { useState, useRef, useEffect } from "react";
 import { useSearchParams, useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
-import { Search, ArrowLeft, Phone, Video, MoreVertical, Verified } from "lucide-react";
+import {
+  Search,
+  ArrowLeft,
+  Phone,
+  Video,
+  MoreVertical,
+  Verified,
+} from "lucide-react";
 import { Layout } from "@/components/layout/Layout";
 import { ChatBubble } from "@/components/chat/ChatBubble";
 import { ChatInput } from "@/components/chat/ChatInput";
@@ -18,7 +25,9 @@ export default function Messages() {
   const navigate = useNavigate();
   const initConvId = searchParams.get("conversationId");
 
-  const [selectedConversation, setSelectedConversation] = useState<string | null>(initConvId);
+  const [selectedConversation, setSelectedConversation] = useState<
+    string | null
+  >(initConvId);
 
   // If we change the selected conversation manually, we should ideally drop the URL param or just leave it,
   // but let's keep it simple. If initConvId changes from URL, we could sync it:
@@ -30,25 +39,30 @@ export default function Messages() {
   const [searchQuery, setSearchQuery] = useState("");
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
-  const { conversations, messages, sendMessage, currentClerkId } = useChat(selectedConversation);
+  const { conversations, messages, sendMessage, currentClerkId } =
+    useChat(selectedConversation);
 
-  const selectedChat = conversations.find((c) => c._id === selectedConversation);
+  const selectedChat = conversations.find(
+    (c) => c._id === selectedConversation,
+  );
 
   const getOtherUser = (conv: Conversation): ChatUser | undefined => {
     return conv.participants.find((p) => p.clerkId !== currentClerkId);
   };
 
-  const currentUserId = selectedChat?.participants.find((p) => p.clerkId === currentClerkId)?._id;
+  const currentUserId = selectedChat?.participants.find(
+    (p) => p.clerkId === currentClerkId,
+  )?._id;
 
   const {
     callState,
-    remoteUserId,
+    incomingCallerId,
     localVideoRef,
     remoteVideoRef,
     startCall,
     answerCall,
     rejectCall,
-    endCall
+    endCall,
   } = useWebRTC();
 
   const handleVideoCall = () => {
@@ -64,19 +78,42 @@ export default function Messages() {
     }
   }, [messages]);
 
-  const handleSendMessage = (message: string, type: 'text' | 'image' = 'text') => {
+  const handleSendMessage = (
+    message: string,
+    type: "text" | "image" = "text",
+  ) => {
     if (!selectedChat) return;
     const otherUser = getOtherUser(selectedChat);
     if (!otherUser) return;
-    
+
     sendMessage(otherUser._id, message, type);
   };
 
-  const filteredConversations = conversations.filter(conv => {
+  const filteredConversations = conversations.filter((conv) => {
     const other = getOtherUser(conv);
     if (!other) return false;
-    return other.profile.personalInfo.name.toLowerCase().includes(searchQuery.toLowerCase());
+    return other.profile.personalInfo.name
+      .toLowerCase()
+      .includes(searchQuery.toLowerCase());
   });
+
+  const incomingCallerProfile = conversations
+    .flatMap((conv) => conv.participants)
+    .find((participant) => participant._id === incomingCallerId);
+
+  const modalCallerName =
+    callState === "receiving"
+      ? incomingCallerProfile?.profile.personalInfo.name || "Incoming call"
+      : selectedChat
+        ? getOtherUser(selectedChat)?.profile.personalInfo.name
+        : "User";
+
+  const modalCallerImage =
+    callState === "receiving"
+      ? incomingCallerProfile?.profile.avatarUrl
+      : selectedChat
+        ? getOtherUser(selectedChat)?.profile.avatarUrl
+        : undefined;
 
   return (
     <Layout isAuthenticated>
@@ -85,12 +122,14 @@ export default function Messages() {
         <div
           className={cn(
             "w-full md:w-80 lg:w-96 border-r border-border bg-card flex flex-col",
-            selectedConversation && "hidden md:flex"
+            selectedConversation && "hidden md:flex",
           )}
         >
           {/* Header */}
           <div className="p-4 border-b border-border">
-            <h1 className="font-serif text-2xl font-bold text-foreground mb-4">Messages</h1>
+            <h1 className="font-serif text-2xl font-bold text-foreground mb-4">
+              Messages
+            </h1>
             <div className="relative">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
               <Input
@@ -109,56 +148,64 @@ export default function Messages() {
                 No conversations found.
               </div>
             ) : (
-             filteredConversations.map((conversation) => {
-               const otherUser = getOtherUser(conversation);
-               if (!otherUser) return null;
-               const lastMsgTime = conversation.updatedAt ? new Date(conversation.updatedAt) : new Date();
+              filteredConversations.map((conversation) => {
+                const otherUser = getOtherUser(conversation);
+                if (!otherUser) return null;
+                const lastMsgTime = conversation.updatedAt
+                  ? new Date(conversation.updatedAt)
+                  : new Date();
 
-               return (
-                <motion.button
-                  key={conversation._id}
-                  onClick={() => {
-                    setSelectedConversation(conversation._id);
-                    navigate(`/messages?conversationId=${conversation._id}`);
-                  }}
-                  className={cn(
-                    "w-full p-4 flex items-start gap-3 hover:bg-secondary/50 transition-colors text-left",
-                    selectedConversation === conversation._id && "bg-secondary"
-                  )}
-                  whileTap={{ scale: 0.98 }}
-                >
-                  <div className="relative">
-                    <img
-                      src={otherUser.profile.avatarUrl || "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=100&h=100&fit=crop"}
-                      alt={otherUser.profile.personalInfo.name}
-                      className="w-14 h-14 rounded-full object-cover"
-                    />
-                    {otherUser.status?.online && (
-                      <div className="absolute bottom-0 right-0 w-4 h-4 rounded-full bg-online border-2 border-card" />
+                return (
+                  <motion.button
+                    key={conversation._id}
+                    onClick={() => {
+                      setSelectedConversation(conversation._id);
+                      navigate(`/messages?conversationId=${conversation._id}`);
+                    }}
+                    className={cn(
+                      "w-full p-4 flex items-start gap-3 hover:bg-secondary/50 transition-colors text-left",
+                      selectedConversation === conversation._id &&
+                        "bg-secondary",
                     )}
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-1">
-                        <span className="font-medium text-foreground">
-                          {otherUser.profile.personalInfo.name}
-                        </span>
-                        {/* Fake verified tag for now */}
-                        <Verified className="w-4 h-4 text-blue-500 fill-blue-500" />
-                      </div>
-                      <span className="text-xs text-muted-foreground">
-                         {format(lastMsgTime, "HH:mm")}
-                      </span>
+                    whileTap={{ scale: 0.98 }}
+                  >
+                    <div className="relative">
+                      <img
+                        src={
+                          otherUser.profile.avatarUrl ||
+                          "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=100&h=100&fit=crop"
+                        }
+                        alt={otherUser.profile.personalInfo.name}
+                        className="w-14 h-14 rounded-full object-cover"
+                      />
+                      {otherUser.status?.online && (
+                        <div className="absolute bottom-0 right-0 w-4 h-4 rounded-full bg-online border-2 border-card" />
+                      )}
                     </div>
-                    <p className="text-sm text-muted-foreground truncate mt-1">
-                      {conversation.lastMessage ? (
-                         conversation.lastMessage.type === 'text' ? conversation.lastMessage.content : "Sent an image"
-                      ) : "No messages yet"}
-                    </p>
-                  </div>
-                </motion.button>
-              )
-            })
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-1">
+                          <span className="font-medium text-foreground">
+                            {otherUser.profile.personalInfo.name}
+                          </span>
+                          {/* Fake verified tag for now */}
+                          <Verified className="w-4 h-4 text-blue-500 fill-blue-500" />
+                        </div>
+                        <span className="text-xs text-muted-foreground">
+                          {format(lastMsgTime, "HH:mm")}
+                        </span>
+                      </div>
+                      <p className="text-sm text-muted-foreground truncate mt-1">
+                        {conversation.lastMessage
+                          ? conversation.lastMessage.type === "text"
+                            ? conversation.lastMessage.content
+                            : "Sent an image"
+                          : "No messages yet"}
+                      </p>
+                    </div>
+                  </motion.button>
+                );
+              })
             )}
           </div>
         </div>
@@ -167,7 +214,7 @@ export default function Messages() {
         <div
           className={cn(
             "flex-1 flex flex-col bg-background",
-            !selectedConversation && "hidden md:flex"
+            !selectedConversation && "hidden md:flex",
           )}
         >
           {selectedChat ? (
@@ -192,7 +239,10 @@ export default function Messages() {
                       </Button>
                       <div className="relative">
                         <img
-                          src={otherUser.profile.avatarUrl || "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=100&h=100&fit=crop"}
+                          src={
+                            otherUser.profile.avatarUrl ||
+                            "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=100&h=100&fit=crop"
+                          }
                           alt={otherUser.profile.personalInfo.name}
                           className="w-10 h-10 rounded-full object-cover"
                         />
@@ -215,7 +265,11 @@ export default function Messages() {
                       <Button variant="ghost" size="icon">
                         <Phone className="w-5 h-5" />
                       </Button>
-                      <Button variant="ghost" size="icon" onClick={handleVideoCall}>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={handleVideoCall}
+                      >
                         <Video className="w-5 h-5" />
                       </Button>
                       <Button variant="ghost" size="icon">
@@ -231,18 +285,21 @@ export default function Messages() {
                 {messages.map((msg) => (
                   <ChatBubble
                     key={msg._id}
-                    message={msg.type === 'text' ? msg.content : ""}
+                    message={msg.type === "text" ? msg.content : ""}
                     timestamp={format(new Date(msg.createdAt), "HH:mm")}
                     isOwn={msg.senderId === currentUserId}
                     status={msg.seen ? "read" : "sent"}
-                    image={msg.type === 'image' ? msg.content : undefined}
+                    image={msg.type === "image" ? msg.content : undefined}
                   />
                 ))}
                 <div ref={messagesEndRef} />
               </div>
 
               {/* Input */}
-              <ChatInput onSend={handleSendMessage} onVideoCall={handleVideoCall} />
+              <ChatInput
+                onSend={handleSendMessage}
+                onVideoCall={handleVideoCall}
+              />
             </>
           ) : (
             <div className="flex-1 flex items-center justify-center text-muted-foreground">
@@ -253,7 +310,9 @@ export default function Messages() {
                 <h3 className="font-serif text-xl font-semibold text-foreground mb-2">
                   Select a conversation
                 </h3>
-                <p className="text-sm">Choose from your existing conversations or start a new one</p>
+                <p className="text-sm">
+                  Choose from your existing conversations or start a new one
+                </p>
               </div>
             </div>
           )}
@@ -267,8 +326,8 @@ export default function Messages() {
         onEndCall={endCall}
         onRejectCall={rejectCall}
         onAnswerCall={answerCall}
-        callerName={selectedChat ? getOtherUser(selectedChat)?.profile.personalInfo.name : "Incoming call"}
-        callerImage={selectedChat ? getOtherUser(selectedChat)?.profile.avatarUrl : undefined}
+        callerName={modalCallerName}
+        callerImage={modalCallerImage}
       />
     </Layout>
   );

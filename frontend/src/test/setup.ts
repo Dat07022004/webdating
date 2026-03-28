@@ -2,10 +2,8 @@ import "@testing-library/jest-dom";
 import { vi } from "vitest";
 import React from "react";
 
-// 1. Mock toàn bộ Clerk React
 vi.mock("@clerk/clerk-react", () => {
   return {
-    // Mock các Hook
     useUser: () => ({
       isSignedIn: true,
       user: { id: "user_123", fullName: "Đăng IT" },
