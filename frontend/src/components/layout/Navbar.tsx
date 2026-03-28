@@ -23,6 +23,10 @@ export const Navbar = ({ isAuthenticated = false }: NavbarProps) => {
     return () => window.removeEventListener("scroll", handleScroll);
   }, []);
 
+  useEffect(() => {
+    setIsOpen(false);
+  }, [location.pathname]);
+
   const navLinks = isAuthenticated
     ? [
       { to: "/discover", label: "Discover", icon: Sparkles },
@@ -37,61 +41,75 @@ export const Navbar = ({ isAuthenticated = false }: NavbarProps) => {
     : [];
 
   return (
-    <nav className={cn(
-      "fixed left-0 right-0 z-50 transition-all duration-300 px-4 mt-4 lg:mt-6",
-      scrolled ? "top-0 mt-2" : "top-0"
-    )}>
+    <nav className="sticky top-2 sm:top-3 z-50 px-3 sm:px-4 lg:px-6 py-2">
       <div className={cn(
-        "max-w-[1200px] mx-auto bg-white/80 backdrop-blur-2xl border border-white/60 shadow-[0_10px_40px_rgba(255,142,83,0.05)] transition-all duration-500",
-        scrolled ? "rounded-[2rem] py-2 px-6 shadow-[0_15px_40px_rgba(0,0,0,0.06)]" : "rounded-[2.5rem] py-3 px-6 lg:px-8"
+        "max-w-[1240px] mx-auto bg-white/85 backdrop-blur-2xl border border-white/70 shadow-[0_10px_34px_rgba(15,23,42,0.08)] transition-all duration-400",
+        scrolled ? "rounded-[1.75rem]" : "rounded-[2.25rem]"
       )}>
-        <div className="flex items-center justify-between h-14">
+        <div className={cn(
+          "flex items-center gap-3 transition-all duration-300",
+          scrolled ? "h-14 px-3 sm:px-4 lg:px-5" : "h-16 px-3 sm:px-5 lg:px-6"
+        )}>
           {/* Logo */}
-          <Link to="/" className="flex items-center gap-3 group">
-            <div className="w-10 h-10 rounded-[1rem] bg-gradient-to-br from-[#FF4D8D] to-[#FF8E53] flex items-center justify-center shadow-[0_4px_15px_rgba(255,77,141,0.3)] group-hover:rotate-12 group-hover:scale-110 transition-all duration-300">
+          <Link to="/" className="flex items-center gap-3 group shrink-0">
+            <div className="relative w-10 h-10 rounded-[1rem] bg-gradient-to-br from-[#FF4D8D] via-[#FF6D7B] to-[#FF8E53] flex items-center justify-center shadow-[0_8px_18px_rgba(255,77,141,0.35)] group-hover:rotate-6 group-hover:scale-105 transition-all duration-300">
               <Heart className="w-5 h-5 text-white fill-white" />
+              <span className="absolute inset-0 rounded-[1rem] bg-white/30 opacity-0 blur-md transition-opacity duration-300 group-hover:opacity-100" />
             </div>
-            <span className="font-sans text-2xl font-black text-slate-900 tracking-tight">Heartly</span>
+            <div className="leading-tight">
+              <p className="font-sans text-[2rem] sm:text-[2.1rem] font-black text-slate-900 tracking-tight">VibeMatch</p>
+            </div>
           </Link>
 
           {/* Desktop Navigation */}
           {isAuthenticated && (
-            <div className="hidden md:flex items-center gap-1.5 bg-slate-50/50 p-1 rounded-full border border-slate-100">
-              {navLinks.map((link) => {
-                const isActive = location.pathname === link.to;
-                return (
-                  <Link key={link.to} to={link.to}>
-                    <Button
-                      variant="ghost"
-                      className={cn(
-                        "relative rounded-full px-5 h-10 font-bold transition-all duration-300",
-                        isActive ? "bg-white text-[#FF4D8D] shadow-sm hover:text-[#FF4D8D]" : "text-slate-500 hover:text-slate-800 hover:bg-slate-100/50"
-                      )}
-                    >
-                      <link.icon className={cn("w-4 h-4 mr-2", isActive && "fill-[#FF4D8D]/20")} />
-                      <span className="hidden lg:inline">{link.label}</span>
-                      {link.badge && (
-                        <Badge className="absolute -top-1 -right-1 h-5 min-w-5 px-1 flex items-center justify-center bg-gradient-to-r from-[#FF4D8D] to-[#FF8E53] text-[10px] text-white font-black border-2 border-white rounded-full">
-                          {link.badge}
-                        </Badge>
-                      )}
-                    </Button>
-                  </Link>
-                );
-              })}
+            <div className="hidden md:flex flex-1 min-w-0">
+              <div className="w-full rounded-[1.15rem] border border-slate-100 bg-slate-50/70 p-1 overflow-x-auto [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
+                <div className="inline-flex min-w-full justify-start xl:justify-center items-center gap-1">
+                  {navLinks.map((link) => {
+                    const isActive = location.pathname === link.to;
+                    return (
+                      <Link key={link.to} to={link.to}>
+                        <Button
+                          variant="ghost"
+                          className={cn(
+                            "relative h-10 rounded-full px-2.5 lg:px-3 xl:px-4 font-semibold transition-all duration-300",
+                            isActive ? "text-[#FF4D8D]" : "text-slate-500 hover:text-slate-800 hover:bg-slate-100/70"
+                          )}
+                        >
+                          {isActive && (
+                            <motion.span
+                              layoutId="navbar-active-pill"
+                              className="absolute inset-0 rounded-full bg-white shadow-[0_2px_10px_rgba(15,23,42,0.08)]"
+                              transition={{ type: "spring", stiffness: 380, damping: 30 }}
+                            />
+                          )}
+                          <link.icon className={cn("relative w-4 h-4 lg:mr-2", isActive && "fill-[#FF4D8D]/20")} />
+                          <span className="relative hidden lg:inline whitespace-nowrap">{link.label}</span>
+                          {link.badge && (
+                            <Badge className="absolute -top-1 -right-1 h-5 min-w-5 px-1 flex items-center justify-center bg-gradient-to-r from-[#FF4D8D] to-[#FF8E53] text-[10px] text-white font-black border-2 border-white rounded-full">
+                              {link.badge}
+                            </Badge>
+                          )}
+                        </Button>
+                      </Link>
+                    );
+                  })}
+                </div>
+              </div>
             </div>
           )}
 
           {/* Auth Buttons */}
           {!isAuthenticated && (
-            <div className="hidden md:flex items-center gap-3">
+            <div className="hidden md:flex items-center gap-2 shrink-0">
               <Link to="/login">
-                <Button variant="ghost" className="rounded-full font-bold px-6 text-slate-600 hover:text-slate-900 hover:bg-slate-100">
+                <Button variant="ghost" className="rounded-full font-semibold px-5 text-slate-600 hover:text-slate-900 hover:bg-slate-100">
                   Log in
                 </Button>
               </Link>
               <Link to="/register">
-                <Button className="rounded-full font-bold px-6 bg-gradient-to-r from-[#FF4D8D] to-[#FF8E53] text-white border-0 shadow-[0_4px_15px_rgba(255,77,141,0.4)] hover:shadow-[0_8px_25px_rgba(255,142,83,0.5)] hover:-translate-y-0.5 transition-all duration-300">
+                <Button className="rounded-full font-semibold px-5 bg-gradient-to-r from-[#FF4D8D] to-[#FF8E53] text-white border-0 shadow-[0_6px_18px_rgba(255,77,141,0.4)] hover:shadow-[0_10px_24px_rgba(255,142,83,0.5)] hover:-translate-y-0.5 transition-all duration-300">
                   Get Started <Zap className="w-4 h-4 ml-1.5 fill-white" />
                 </Button>
               </Link>
@@ -102,7 +120,7 @@ export const Navbar = ({ isAuthenticated = false }: NavbarProps) => {
           <Button
             variant="ghost"
             size="icon"
-            className="md:hidden rounded-full text-slate-600 hover:bg-slate-100"
+            className="md:hidden ml-auto rounded-full text-slate-600 hover:bg-slate-100"
             onClick={() => setIsOpen(!isOpen)}
           >
             {isOpen ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
@@ -117,8 +135,8 @@ export const Navbar = ({ isAuthenticated = false }: NavbarProps) => {
             initial={{ opacity: 0, y: -20, scale: 0.95 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: -20, scale: 0.95 }}
-            transition={{ duration: 0.2 }}
-            className="md:hidden absolute top-[110%] left-4 right-4 bg-white/95 backdrop-blur-3xl border border-slate-100 shadow-[0_20px_60px_rgba(0,0,0,0.1)] rounded-[2rem] overflow-hidden"
+            transition={{ duration: 0.22 }}
+            className="md:hidden mt-2 bg-white/95 backdrop-blur-3xl border border-slate-100 shadow-[0_20px_60px_rgba(0,0,0,0.1)] rounded-[1.5rem] overflow-hidden"
           >
             <div className="p-4 space-y-2">
               {isAuthenticated ? (
