@@ -1,5 +1,6 @@
 import mongoose from 'mongoose';
 import { Appointment, Location } from '../models/appointments.model.js';
+import { sendMail } from '../lib/mailer.js';
 
 /**
  * Service layer for appointments
@@ -124,6 +125,25 @@ export async function createAppointment({ userId, locationId, startTime, totalCo
   });
 
   const saved = await appt.save();
+
+  // Send booking confirmation email to user (best-effort)
+  try {
+    const usersColl = mongoose.connection.collection('users');
+    const userDoc = await usersColl.findOne({ _id: mongoose.Types.ObjectId(userId) });
+    const toEmail = userDoc?.email;
+    if (toEmail) {
+      const locationName = location?.name || 'địa điểm';
+      const startStr = new Date(saved.startTime).toLocaleString();
+      await sendMail({
+        to: toEmail,
+        subject: `Xác nhận lịch hẹn tại ${locationName}`,
+        text: `Bạn đã đặt lịch hẹn tại ${locationName} vào ${startStr}. Chi phí dự kiến: ${saved.totalCost || 'N/A'}`,
+      });
+    }
+  } catch (mailErr) {
+    console.warn('Failed to send booking email', mailErr);
+  }
+
   return saved;
 }
 
@@ -172,5 +192,24 @@ export async function cancelAppointment(id) {
   if (!appt) throw new Error('Appointment not found');
   appt.status = 'cancelled';
   const saved = await appt.save();
+
+  // Send cancellation email to user (best-effort)
+  try {
+    const usersColl = mongoose.connection.collection('users');
+    const userDoc = await usersColl.findOne({ _id: mongoose.Types.ObjectId(appt.userId) });
+    const toEmail = userDoc?.email;
+    if (toEmail) {
+      const locationName = appt.locationId?.name || 'địa điểm';
+      const startStr = new Date(appt.startTime).toLocaleString();
+      await sendMail({
+        to: toEmail,
+        subject: `Hủy lịch hẹn tại ${locationName}`,
+        text: `Lịch hẹn tại ${locationName} vào ${startStr} đã bị hủy.`,
+      });
+    }
+  } catch (mailErr) {
+    console.warn('Failed to send cancellation email', mailErr);
+  }
+
   return saved;
 }

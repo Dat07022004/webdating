@@ -1,5 +1,6 @@
 import mongoose from "mongoose";
 import { Location, Appointment } from "../models/appointments.model.js";
+import { sendMail } from "../lib/mailer.js";
 
 /**
  * Try to find a Location by category and budget, then book at preferredTime if free.
@@ -50,6 +51,24 @@ export async function suggestAndBook(userId, category, userBudget, preferredTime
     });
 
     const saved = await appt.save();
+
+    // send confirmation email to user
+    try {
+      const usersColl = mongoose.connection.collection('users');
+      const userDoc = await usersColl.findOne({ _id: mongoose.Types.ObjectId(userId) });
+      const toEmail = userDoc?.email;
+      if (toEmail) {
+        const locationName = location?.name || 'địa điểm';
+        const startStr = new Date(saved.startTime).toLocaleString();
+        await sendMail({
+          to: toEmail,
+          subject: `Xác nhận lịch hẹn tại ${locationName}`,
+          text: `Bạn đã đặt lịch hẹn tại ${locationName} vào ${startStr}. Chi phí dự kiến: ${saved.totalCost || 'N/A'}`,
+        });
+      }
+    } catch (mailErr) {
+      console.warn('Failed to send booking email', mailErr);
+    }
 
     return { success: true, data: saved };
   } catch (err) {
