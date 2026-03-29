@@ -190,8 +190,7 @@ export const useWebRTC = () => {
         }
 
         if (
-          (connectionState === "failed" ||
-            connectionState === "disconnected") &&
+          connectionState === "failed" &&
           (callStateRef.current === "connecting" ||
             callStateRef.current === "in_call")
         ) {
@@ -277,6 +276,7 @@ export const useWebRTC = () => {
 
     const success = await initLocalStream();
     if (!success) {
+      alert("CĂNG RỒI: Không xin được quyền mở Camera hoặc Mic trên máy này!");
       rejectCall();
       return;
     }
@@ -524,41 +524,31 @@ export const useWebRTC = () => {
     };
 
     socket.on("incoming-call", handleIncomingCall);
-    socket.on("incoming_call", handleIncomingCall);
 
     socket.on("call-accepted", handleCallAccepted);
 
     socket.on("webrtc-offer", handleOffer);
     socket.on("webrtc-answer", handleAnswer);
-    socket.on("call_answered", handleAnswer);
 
     socket.on("webrtc-ice-candidate", handleIceCandidate);
-    socket.on("ice_candidate", handleIceCandidate);
 
     socket.on("call-ended", handleCallEnded);
-    socket.on("call_ended", handleCallEnded);
     socket.on("call-rejected", handleCallRejected);
-    socket.on("call_rejected", handleCallRejected);
     socket.on("call-failed", handleCallFailed);
     socket.on("disconnect", handleSocketDisconnect);
 
     return () => {
       socket.off("incoming-call", handleIncomingCall);
-      socket.off("incoming_call", handleIncomingCall);
 
       socket.off("call-accepted", handleCallAccepted);
 
       socket.off("webrtc-offer", handleOffer);
       socket.off("webrtc-answer", handleAnswer);
-      socket.off("call_answered", handleAnswer);
 
       socket.off("webrtc-ice-candidate", handleIceCandidate);
-      socket.off("ice_candidate", handleIceCandidate);
 
       socket.off("call-ended", handleCallEnded);
-      socket.off("call_ended", handleCallEnded);
       socket.off("call-rejected", handleCallRejected);
-      socket.off("call_rejected", handleCallRejected);
       socket.off("call-failed", handleCallFailed);
       socket.off("disconnect", handleSocketDisconnect);
     };
