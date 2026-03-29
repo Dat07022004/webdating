@@ -1,10 +1,12 @@
 import { useState, useEffect } from "react";
 import { Link, useLocation } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
-import { Heart, MessageCircle, Bell, User, Menu, X, Sparkles, MapPin, CalendarDays, Zap, Crown } from "lucide-react";
+import { Heart, MessageCircle, Bell, User, Menu, X, Sparkles, MapPin, CalendarDays, Zap, Crown, Shield } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
+import { useAuth } from "@clerk/clerk-react";
+import { useQuery } from "@tanstack/react-query";
 
 interface NavbarProps {
   isAuthenticated?: boolean;
@@ -14,6 +16,25 @@ export const Navbar = ({ isAuthenticated = false }: NavbarProps) => {
   const [isOpen, setIsOpen] = useState(false);
   const [scrolled, setScrolled] = useState(false);
   const location = useLocation();
+  const { getToken } = useAuth();
+
+  const { data: userProfile } = useQuery({
+    queryKey: ['userProfileNav'],
+    queryFn: async () => {
+      if (!isAuthenticated) return null;
+      const token = await getToken();
+      const res = await fetch("/api/users/me", {
+         headers: { Authorization: `Bearer ${token}` }
+      });
+      if (!res.ok) return null;
+      const data = await res.json();
+      return data.profile;
+    },
+    enabled: isAuthenticated,
+    staleTime: Infinity,
+  });
+
+  const isAdmin = userProfile?.role === 'admin';
 
   useEffect(() => {
     const handleScroll = () => {
@@ -37,6 +58,7 @@ export const Navbar = ({ isAuthenticated = false }: NavbarProps) => {
       { to: "/notifications", label: "Activity", icon: Bell, badge: 5 },
       { to: "/premium", label: "Premium", icon: Crown },
       { to: "/profile", label: "Profile", icon: User },
+      ...(isAdmin ? [{ to: "/admin", label: "Admin", icon: Shield }] : []),
     ]
     : [];
 
