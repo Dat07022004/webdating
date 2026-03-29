@@ -1,8 +1,8 @@
-import React from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
-import { Phone, PhoneOff, Mic, MicOff, Video, VideoOff } from 'lucide-react';
+import React from "react";
+import { motion, AnimatePresence } from "framer-motion";
+import { Phone, PhoneOff, Mic, MicOff, Video, VideoOff } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { CallState } from '@/hooks/useWebRTC';
+import { CallState } from "@/hooks/useWebRTC";
 
 interface VideoCallModalProps {
   callState: CallState;
@@ -28,12 +28,14 @@ export const VideoCallModal: React.FC<VideoCallModalProps> = ({
   const [isMuted, setIsMuted] = React.useState(false);
   const [isVideoOff, setIsVideoOff] = React.useState(false);
 
-  if (callState === 'idle') return null;
+  if (callState === "idle") return null;
 
   const toggleMute = () => {
     if (localVideoRef.current && localVideoRef.current.srcObject) {
       const stream = localVideoRef.current.srcObject as MediaStream;
-      stream.getAudioTracks().forEach(track => (track.enabled = !track.enabled));
+      stream
+        .getAudioTracks()
+        .forEach((track) => (track.enabled = !track.enabled));
       setIsMuted(!isMuted);
     }
   };
@@ -41,7 +43,9 @@ export const VideoCallModal: React.FC<VideoCallModalProps> = ({
   const toggleVideo = () => {
     if (localVideoRef.current && localVideoRef.current.srcObject) {
       const stream = localVideoRef.current.srcObject as MediaStream;
-      stream.getVideoTracks().forEach(track => (track.enabled = !track.enabled));
+      stream
+        .getVideoTracks()
+        .forEach((track) => (track.enabled = !track.enabled));
       setIsVideoOff(!isVideoOff);
     }
   };
@@ -54,7 +58,7 @@ export const VideoCallModal: React.FC<VideoCallModalProps> = ({
         exit={{ opacity: 0 }}
         className="fixed inset-0 z-50 flex items-center justify-center bg-background/95 backdrop-blur-sm"
       >
-        {callState === 'receiving' ? (
+        {callState === "receiving" ? (
           <motion.div
             initial={{ scale: 0.9 }}
             animate={{ scale: 1 }}
@@ -62,7 +66,10 @@ export const VideoCallModal: React.FC<VideoCallModalProps> = ({
           >
             <div className="relative">
               <img
-                src={callerImage || "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=100&h=100&fit=crop"}
+                src={
+                  callerImage ||
+                  "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=100&h=100&fit=crop"
+                }
                 alt={callerName}
                 className="w-24 h-24 rounded-full object-cover shadow-lg border-2 border-primary"
               />
@@ -74,7 +81,9 @@ export const VideoCallModal: React.FC<VideoCallModalProps> = ({
             </div>
             <div className="text-center">
               <h3 className="text-xl font-semibold">{callerName}</h3>
-              <p className="text-muted-foreground mt-1">Incoming video call...</p>
+              <p className="text-muted-foreground mt-1">
+                Incoming video call...
+              </p>
             </div>
             <div className="flex gap-4 w-full">
               <Button
@@ -101,11 +110,12 @@ export const VideoCallModal: React.FC<VideoCallModalProps> = ({
               ref={remoteVideoRef}
               autoPlay
               playsInline
+              muted={false}
               className="w-full h-full object-cover"
             />
-            
+
             {/* Local Video (Floating) */}
-            <motion.div 
+            <motion.div
               drag
               dragConstraints={{ left: 0, right: 300, top: 0, bottom: 500 }}
               className="absolute top-6 right-6 w-32 md:w-48 aspect-[3/4] bg-zinc-900 rounded-xl overflow-hidden shadow-xl border-2 border-zinc-800"
@@ -120,13 +130,19 @@ export const VideoCallModal: React.FC<VideoCallModalProps> = ({
             </motion.div>
 
             {/* Calling Status Overlay */}
-            {callState === 'calling' && (
+            {callState === "calling" && (
               <div className="absolute inset-0 flex items-center justify-center bg-black/50 backdrop-blur-sm z-10">
-                 <div className="text-center">
-                    <img src={callerImage || ""} alt={callerName} className="w-24 h-24 rounded-full mx-auto mb-4 object-cover opacity-80" />
-                    <h2 className="text-2xl text-white font-medium mb-2">Calling {callerName}...</h2>
-                    <p className="text-zinc-400">Ringing...</p>
-                 </div>
+                <div className="text-center">
+                  <img
+                    src={callerImage || ""}
+                    alt={callerName}
+                    className="w-24 h-24 rounded-full mx-auto mb-4 object-cover opacity-80"
+                  />
+                  <h2 className="text-2xl text-white font-medium mb-2">
+                    Calling {callerName}...
+                  </h2>
+                  <p className="text-zinc-400">Ringing...</p>
+                </div>
               </div>
             )}
 
@@ -135,10 +151,14 @@ export const VideoCallModal: React.FC<VideoCallModalProps> = ({
               <Button
                 variant="ghost"
                 size="icon"
-                className={`rounded-full w-12 h-12 ${isMuted ? 'bg-red-500/20 text-red-500 hover:bg-red-500/30 hover:text-red-500' : 'text-white hover:bg-white/20'}`}
+                className={`rounded-full w-12 h-12 ${isMuted ? "bg-red-500/20 text-red-500 hover:bg-red-500/30 hover:text-red-500" : "text-white hover:bg-white/20"}`}
                 onClick={toggleMute}
               >
-                {isMuted ? <MicOff className="w-5 h-5" /> : <Mic className="w-5 h-5" />}
+                {isMuted ? (
+                  <MicOff className="w-5 h-5" />
+                ) : (
+                  <Mic className="w-5 h-5" />
+                )}
               </Button>
               <Button
                 variant="destructive"
@@ -151,10 +171,14 @@ export const VideoCallModal: React.FC<VideoCallModalProps> = ({
               <Button
                 variant="ghost"
                 size="icon"
-                className={`rounded-full w-12 h-12 ${isVideoOff ? 'bg-red-500/20 text-red-500 hover:bg-red-500/30 hover:text-red-500' : 'text-white hover:bg-white/20'}`}
+                className={`rounded-full w-12 h-12 ${isVideoOff ? "bg-red-500/20 text-red-500 hover:bg-red-500/30 hover:text-red-500" : "text-white hover:bg-white/20"}`}
                 onClick={toggleVideo}
               >
-                {isVideoOff ? <VideoOff className="w-5 h-5" /> : <Video className="w-5 h-5" />}
+                {isVideoOff ? (
+                  <VideoOff className="w-5 h-5" />
+                ) : (
+                  <Video className="w-5 h-5" />
+                )}
               </Button>
             </div>
           </div>
