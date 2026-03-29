@@ -43,6 +43,7 @@ export const useWebRTC = () => {
   const remoteVideoRef = useRef<HTMLVideoElement>(null);
   const peerConnection = useRef<RTCPeerConnection | null>(null);
   const localStream = useRef<MediaStream | null>(null);
+  const remoteStream = useRef<MediaStream | null>(null);
   const pendingIncomingCall = useRef<IncomingCallPayload | null>(null);
   const activeCallIdRef = useRef<string | null>(null);
   const pendingIceCandidates = useRef<RTCIceCandidateInit[]>([]);
@@ -70,7 +71,25 @@ export const useWebRTC = () => {
     }
   };
 
+  const syncVideoElements = useCallback(() => {
+    if (localVideoRef.current && localStream.current) {
+      if (localVideoRef.current.srcObject !== localStream.current) {
+        localVideoRef.current.srcObject = localStream.current;
+      }
+    }
+
+    if (remoteVideoRef.current && remoteStream.current) {
+      if (remoteVideoRef.current.srcObject !== remoteStream.current) {
+        remoteVideoRef.current.srcObject = remoteStream.current;
+      }
+      void remoteVideoRef.current.play().catch((error) => {
+        console.warn("[WebRTC] remote video play failed:", error);
+      });
+    }
+  }, []);
+
   const attachRemoteStream = async (stream: MediaStream) => {
+    remoteStream.current = stream;
     if (!remoteVideoRef.current) return;
 
     stream.getTracks().forEach((track) => {
@@ -144,6 +163,7 @@ export const useWebRTC = () => {
     }
     pendingIncomingCall.current = null;
     pendingIceCandidates.current = [];
+    remoteStream.current = null;
     activeCallIdRef.current = null;
     setCallStateSafe("idle");
     setRemoteUserIdSafe(null);
@@ -334,6 +354,16 @@ export const useWebRTC = () => {
 
     cleanup();
   }, [cleanup, emitEvent, socket]);
+
+  useEffect(() => {
+    const frameId = window.requestAnimationFrame(() => {
+      syncVideoElements();
+    });
+
+    return () => {
+      window.cancelAnimationFrame(frameId);
+    };
+  }, [callState, syncVideoElements]);
 
   useEffect(() => {
     if (!socket) return;
@@ -537,6 +567,8 @@ export const useWebRTC = () => {
     socket.on("call-failed", handleCallFailed);
     socket.on("disconnect", handleSocketDisconnect);
 
+    syncVideoElements();
+
     return () => {
       socket.off("incoming-call", handleIncomingCall);
 
@@ -558,6 +590,7 @@ export const useWebRTC = () => {
     createPeerConnection,
     emitEvent,
     flushPendingIceCandidates,
+    syncVideoElements,
   ]);
 
   return {
