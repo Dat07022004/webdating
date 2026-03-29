@@ -6,8 +6,10 @@ import { connectDB } from './config/db.js';
 import { serve } from 'inngest/express';
 import userRoutes from './routes/user.routes.js';
 import healthRoutes from './routes/health.routes.js';
+import appointmentsRoutes from './routes/appointments.routes.js';
 
 import { functions, inngest } from './config/inngest.js';
+import { startReminderWorker } from './workers/reminderWorker.js';
 
 const app = express();
 
@@ -20,6 +22,7 @@ app.use(clerkMiddleware()) // adds auth access on req via req.auth()
 app.use("/api/inngest",serve({client: inngest, functions}));
 app.use('/api/users', userRoutes);
 app.use('/api', healthRoutes);
+app.use('/api/appointments', appointmentsRoutes);
 
 if(ENV.NODE_ENV === 'production'){
     app.use(express.static(path.join(_dirname, "../frontend/dist"))); 
@@ -33,5 +36,11 @@ const startServer = async () => {
     app.listen(ENV.PORT, () => {
         console.log(`Server is running on port ${ENV.PORT}`);
     });
+        // Start background reminder worker
+        try {
+            startReminderWorker();
+        } catch (err) {
+            console.error('Failed to start reminder worker', err);
+        }
 }
 startServer();
