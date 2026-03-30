@@ -182,22 +182,59 @@ export default function Matches() {
             </TabsContent>
 
             <TabsContent value="likes">
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                {likes.map((like) => (
-                  <div key={like.id} className="p-4 bg-card rounded-2xl border border-border flex items-center gap-4">
-                    <img src={like.image} className="w-16 h-16 rounded-full object-cover" alt={like.name} />
-                    <div className="flex-1">
-                      <h3 className="font-bold">{like.name}, {like.age}</h3>
-                      <p className="text-xs text-muted-foreground">Interested in you</p>
+              {isLoading ? (
+                <div className="flex justify-center items-center h-64">
+                  <p className="text-muted-foreground animate-pulse">Loading likes...</p>
+                </div>
+              ) : likes.length > 0 ? (
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                  {likes.map((like) => (
+                    <div key={like.id} className="p-4 bg-card rounded-2xl border border-border flex items-center gap-4">
+                      <img src={like.image} className="w-16 h-16 rounded-full object-cover" alt={like.name} />
+                      <div className="flex-1">
+                        <h3 className="font-bold">{like.name}, {like.age}</h3>
+                        <p className="text-xs text-muted-foreground">Interested in you</p>
+                      </div>
+                      <Button size="sm" onClick={() => navigate("/discover")}>View Profile</Button>
                     </div>
-                    <Button size="sm" onClick={() => navigate("/discover")}>View Profile</Button>
-                  </div>
-                ))}
-              </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="flex flex-col items-center justify-center py-20 bg-muted/20 rounded-3xl border border-dashed border-border">
+                  <Heart className="w-12 h-12 text-muted-foreground/30 mb-4" />
+                  <p className="text-muted-foreground italic text-center">
+                    No likes yet. Keep improving your profile!
+                  </p>
+                </div>
+              )}
             </TabsContent>
 
             <TabsContent value="sent">
-               <p className="text-center text-muted-foreground py-10">Requests you've sent will appear here.</p>
+              {isLoading ? (
+                <div className="flex justify-center items-center h-64">
+                  <p className="text-muted-foreground animate-pulse">Loading sent requests...</p>
+                </div>
+              ) : sent.length > 0 ? (
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                  {sent.map((item) => (
+                    <div key={item.user.id} className="p-4 bg-card rounded-2xl border border-border flex items-center gap-4">
+                      <img src={item.user.image} className="w-16 h-16 rounded-full object-cover" alt={item.user.name} />
+                      <div className="flex-1">
+                        <h3 className="font-bold">{item.user.name}, {item.user.age}</h3>
+                        <p className="text-xs text-muted-foreground">Request sent</p>
+                      </div>
+                      <Button size="sm" variant="outline" onClick={() => navigate("/discover")}>View Profile</Button>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="flex flex-col items-center justify-center py-20 bg-muted/20 rounded-3xl border border-dashed border-border">
+                  <Ghost className="w-12 h-12 text-muted-foreground/30 mb-4" />
+                  <p className="text-muted-foreground italic text-center">
+                    No sent requests yet. Start discovering!
+                  </p>
+                </div>
+              )}
             </TabsContent>
           </Tabs>
         </div>

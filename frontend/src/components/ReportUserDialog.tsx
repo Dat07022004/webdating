@@ -15,11 +15,12 @@ interface ReportUserDialogProps {
 export function ReportUserDialog({ isOpen, onClose, targetUser, onSubmit }: ReportUserDialogProps) {
   const [reason, setReason] = useState("");
   const [details, setDetails] = useState("");
-  const [shouldBlock, setShouldBlock] = useState(true);
+  const [shouldBlock, setShouldBlock] = useState(false);
 
   const handleConfirm = () => {
     if (!reason) return;
     onSubmit({ reason, details, shouldBlock });
+    onClose();
   };
 
   return (
