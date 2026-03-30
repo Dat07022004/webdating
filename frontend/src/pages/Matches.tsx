@@ -1,13 +1,15 @@
 import { useEffect, useState } from "react";
 import { useAuth } from "@clerk/clerk-react";
-import { motion, AnimatePresence } from "framer-motion";
-import { Heart, Sparkles } from "lucide-react";
+import { motion } from "framer-motion";
+import { Heart, Sparkles, Ghost } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { Layout } from "@/components/layout/Layout";
 import { MatchCard } from "@/components/cards/MatchCard";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
+import { ReportUserDialog } from "@/components/ReportUserDialog";
+import { BlockUserDialog } from "@/components/BlockUserDialog";
 
 interface MatchUser {
   id: string;
@@ -16,7 +18,6 @@ interface MatchUser {
   image: string;
   isOnline: boolean;
   lastActive: string;
-  matchPercentage?: number;
 }
 
 export default function Matches() {
@@ -26,19 +27,23 @@ export default function Matches() {
 
   const [matches, setMatches] = useState<MatchUser[]>([]);
   const [likes, setLikes] = useState<MatchUser[]>([]);
-  const [sent, setSent] = useState<{status: string, user: MatchUser}[]>([]);
+  const [sent, setSent] = useState<{ status: string; user: MatchUser }[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+
+  // States for Safety Actions
+  const [reportTarget, setReportTarget] = useState<MatchUser | null>(null);
+  const [blockTarget, setBlockTarget] = useState<MatchUser | null>(null);
 
   const fetchConnections = async () => {
     try {
       const token = await getToken();
       if (!token) return;
 
-      const baseUrl = import.meta.env.VITE_API_URL ? import.meta.env.VITE_API_URL.replace(/\/$/, '') : 'http://localhost:3000';
-      const res = await fetch(baseUrl + '/api/users/connections', {
+      const baseUrl = import.meta.env.VITE_API_URL?.replace(/\/$/, "") || "http://localhost:3000";
+      const res = await fetch(`${baseUrl}/api/users/connections`, {
         headers: {
-          Authorization: `Bearer ${token}`
-        }
+          Authorization: `Bearer ${token}`,
+        },
       });
       const data = await res.json();
       if (data) {
@@ -60,16 +65,14 @@ export default function Matches() {
   const handleMessage = async (userId: string) => {
     try {
       const token = await getToken();
-      if (!token) return;
-
-      const baseUrl = import.meta.env.VITE_API_URL ? import.meta.env.VITE_API_URL.replace(/\/$/, '') : 'http://localhost:3000';
-      const res = await fetch(baseUrl + '/api/chat/conversations', {
-        method: 'POST',
+      const baseUrl = import.meta.env.VITE_API_URL?.replace(/\/$/, "") || "http://localhost:3000";
+      const res = await fetch(`${baseUrl}/api/chat/conversations`, {
+        method: "POST",
         headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json'
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
         },
-        body: JSON.stringify({ targetUserId: userId })
+        body: JSON.stringify({ targetUserId: userId }),
       });
 
       const data = await res.json();
@@ -79,36 +82,44 @@ export default function Matches() {
         navigate("/messages");
       }
     } catch (e) {
-      console.error("Error creating conversation:", e);
       navigate("/messages");
     }
   };
 
-  const handleAccept = async (userId: string) => {
+  const handleSafetyAction = async (targetId: string, action: "report" | "block", details?: any) => {
     try {
       const token = await getToken();
-      if (!token) return;
+      const baseUrl = import.meta.env.VITE_API_URL?.replace(/\/$/, "") || "http://localhost:3000";
 
-      const baseUrl = import.meta.env.VITE_API_URL ? import.meta.env.VITE_API_URL.replace(/\/$/, '') : 'http://localhost:3000';
-      const res = await fetch(baseUrl + '/api/users/action', {
-        method: 'POST',
+      const payload =
+        action === "block"
+          ? { reportedId: targetId, reason: "Other", details: "Direct block from Matches UI", shouldBlock: true }
+          : { reportedId: targetId, ...details };
+
+      const res = await fetch(`${baseUrl}/api/safety/report`, {
+        method: "POST",
         headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json'
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
         },
-        body: JSON.stringify({ targetUserId: userId, action: 'like' })
+        body: JSON.stringify(payload),
       });
 
       if (res.ok) {
         toast({
-          title: "It's a Match! 🎉",
-          description: "You can now send them a message.",
+          title: action === "block" ? "User Blocked Successfully" : "Report Submitted",
+          description: action === "block" 
+            ? "This user has been removed from your matches." 
+            : "Thank you for helping keep our community safe.",
         });
-        // Refresh the lists
-        fetchConnections();
+        fetchConnections(); // Refresh lists to remove blocked user
       }
-    } catch (e) {
-      console.error(e);
+    } catch (error) {
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: "Failed to process request. Please try again.",
+      });
     }
   };
 
@@ -116,147 +127,100 @@ export default function Matches() {
     <Layout isAuthenticated>
       <div className="min-h-screen py-8">
         <div className="container mx-auto px-4">
-          {/* Header */}
           <div className="mb-8">
             <h1 className="font-serif text-3xl font-bold text-foreground flex items-center gap-2">
               <Heart className="w-8 h-8 text-primary" />
               Matches
             </h1>
-            <p className="text-muted-foreground mt-1">
-              Your connections are waiting
-            </p>
+            <p className="text-muted-foreground mt-1">Your recent connections and interests</p>
           </div>
 
           <Tabs defaultValue="matches" className="space-y-6">
             <TabsList className="grid w-full max-w-xl grid-cols-3">
               <TabsTrigger value="matches" className="gap-2">
-                <Heart className="w-4 h-4" />
                 Matches ({matches.length})
               </TabsTrigger>
               <TabsTrigger value="likes" className="gap-2">
-                <Sparkles className="w-4 h-4" />
                 Likes ({likes.length})
               </TabsTrigger>
               <TabsTrigger value="sent" className="gap-2">
-                <Sparkles className="w-4 h-4" />
                 Sent ({sent.length})
               </TabsTrigger>
             </TabsList>
 
-            <TabsContent value="matches" className="space-y-8">
+            <TabsContent value="matches" className="min-h-[400px]">
               {isLoading ? (
-                  <p className="text-muted-foreground text-center">Loading matches...</p>
+                <div className="flex justify-center items-center h-64">
+                  <p className="text-muted-foreground animate-pulse">Loading matches...</p>
+                </div>
               ) : matches.length > 0 ? (
                 <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4">
                   {matches.map((match, i) => (
                     <motion.div
                       key={match.id}
-                      initial={{ opacity: 0, y: 20 }}
+                      initial={{ opacity: 0, y: 10 }}
                       animate={{ opacity: 1, y: 0 }}
                       transition={{ delay: i * 0.05 }}
                     >
                       <MatchCard
                         user={match}
                         onMessage={() => handleMessage(match.id)}
+                        onReport={() => setReportTarget(match)}
+                        onBlock={() => setBlockTarget(match)}
                       />
                     </motion.div>
                   ))}
                 </div>
               ) : (
-                <div className="rounded-2xl bg-card p-8 text-center shadow-card border border-border">
-                  <Heart className="w-12 h-12 text-muted-foreground mx-auto mb-4 opacity-30" />
-                  <p className="text-muted-foreground">No confirmed matches yet. Keep exploring!</p>
+                <div className="flex flex-col items-center justify-center py-20 bg-muted/20 rounded-3xl border border-dashed border-border">
+                  <Ghost className="w-12 h-12 text-muted-foreground/30 mb-4" />
+                  <p className="text-muted-foreground italic text-center">
+                    No matches yet. Keep discovering new people!
+                  </p>
                 </div>
               )}
             </TabsContent>
 
             <TabsContent value="likes">
-              {isLoading ? (
-                  <p className="text-muted-foreground text-center">Loading likes...</p>
-              ) : likes.length > 0 ? (
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                  {likes.map((like, i) => (
-                    <motion.div
-                      key={like.id}
-                      initial={{ opacity: 0, y: 20 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      transition={{ delay: i * 0.08 }}
-                      className="rounded-2xl bg-card p-4 shadow-card border border-border"
-                    >
-                      <div className="flex items-center gap-3">
-                        <img
-                          src={like.image}
-                          alt={like.name}
-                          className="w-16 h-16 rounded-full object-cover ring-2 ring-primary"
-                        />
-                        <div>
-                          <h3 className="font-semibold text-foreground">
-                            {like.name}, {like.age}
-                          </h3>
-                          <p className="text-sm text-muted-foreground">{like.lastActive}</p>
-                        </div>
-                      </div>
-
-                      <Button
-                        className="w-full mt-4 gap-2"
-                        variant="default"
-                        onClick={() => handleAccept(like.id)}
-                      >
-                        <Heart className="w-4 h-4" />
-                        Match With {like.name}
-                      </Button>
-                    </motion.div>
-                  ))}
-                </div>
-              ) : (
-                <div className="rounded-2xl bg-card p-8 text-center shadow-card border border-border">
-                  <p className="text-muted-foreground">No incoming likes right now.</p>
-                </div>
-              )}
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                {likes.map((like) => (
+                  <div key={like.id} className="p-4 bg-card rounded-2xl border border-border flex items-center gap-4">
+                    <img src={like.image} className="w-16 h-16 rounded-full object-cover" alt={like.name} />
+                    <div className="flex-1">
+                      <h3 className="font-bold">{like.name}, {like.age}</h3>
+                      <p className="text-xs text-muted-foreground">Interested in you</p>
+                    </div>
+                    <Button size="sm" onClick={() => navigate("/discover")}>View Profile</Button>
+                  </div>
+                ))}
+              </div>
             </TabsContent>
 
             <TabsContent value="sent">
-              {isLoading ? (
-                  <p className="text-muted-foreground text-center">Loading sent requests...</p>
-              ) : sent.length > 0 ? (
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                  {sent.map((item, i) => (
-                    <motion.div
-                      key={item.user.id}
-                      initial={{ opacity: 0, y: 20 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      transition={{ delay: i * 0.08 }}
-                      className="rounded-2xl bg-card p-4 shadow-card border border-border opacity-80 hover:opacity-100 transition-opacity"
-                    >
-                      <div className="flex items-center gap-3">
-                        <img
-                          src={item.user.image}
-                          alt={item.user.name}
-                          className="w-16 h-16 rounded-full object-cover grayscale transition-all duration-300 hover:grayscale-0"
-                        />
-                        <div>
-                          <h3 className="font-semibold text-foreground">
-                            {item.user.name}, {item.user.age}
-                          </h3>
-                          <p className="text-sm text-yellow-600 dark:text-yellow-500 font-medium">Pending accept</p>
-                        </div>
-                      </div>
-
-                      <Button className="w-full mt-4" variant="secondary" disabled>
-                        Waiting for response
-                      </Button>
-                    </motion.div>
-                  ))}
-                </div>
-              ) : (
-                <div className="rounded-2xl bg-card p-8 text-center shadow-card border border-border">
-                  <p className="text-muted-foreground">You have not sent any requests yet.</p>
-                </div>
-              )}
+               <p className="text-center text-muted-foreground py-10">Requests you've sent will appear here.</p>
             </TabsContent>
           </Tabs>
         </div>
       </div>
+
+      {/* Safety Dialogs */}
+      {reportTarget && (
+        <ReportUserDialog
+          isOpen={!!reportTarget}
+          onClose={() => setReportTarget(null)}
+          targetUser={{ id: reportTarget.id, name: reportTarget.name }}
+          onSubmit={(data) => handleSafetyAction(reportTarget.id, "report", data)}
+        />
+      )}
+
+      {blockTarget && (
+        <BlockUserDialog
+          isOpen={!!blockTarget}
+          onClose={() => setBlockTarget(null)}
+          targetUser={{ id: blockTarget.id, name: blockTarget.name }}
+          onConfirm={() => handleSafetyAction(blockTarget.id, "block")}
+        />
+      )}
     </Layout>
   );
 }

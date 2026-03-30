@@ -1,10 +1,12 @@
 import { Conversation } from '../models/conversation.model.js';
 import { Message } from '../models/message.model.js';
 import { User } from '../models/user.model.js';
+import { Block } from '../models/safety.js';
 
 export const getConversations = async (req, res) => {
   try {
-    const clerkId = req.auth.userId; // Từ @clerk/express
+    const auth = typeof req.auth === 'function' ? req.auth() : req.auth;
+    const clerkId = auth?.userId;
     if (!clerkId) {
       return res.status(401).json({ success: false, message: 'Unauthorized' });
     }
@@ -15,8 +17,23 @@ export const getConversations = async (req, res) => {
     }
     const userId = user._id;
 
+    // Lấy danh sách những người bị chặn hoặc đã chặn user này
+    const blocks = await Block.find({
+      $or: [
+        { blockerId: userId },
+        { blockedId: userId }
+      ]
+    });
+
+    const blockedUserIds = blocks.map(b => 
+      b.blockerId.toString() === userId.toString() ? b.blockedId.toString() : b.blockerId.toString()
+    );
+
     // Lấy danh sách conversation của user, sắp xếp theo tin nhắn mới nhất
-    const conversations = await Conversation.find({ participants: userId })
+    const conversations = await Conversation.find({ 
+        participants: userId,
+        participants: { $nin: blockedUserIds } // Loại bỏ conversation với người bị chặn
+      })
       .populate({
         path: 'participants',
         select: 'profile.personalInfo.name profile.avatarUrl status clerkId',
@@ -66,13 +83,27 @@ export const getMessages = async (req, res) => {
 
 export const createConversation = async (req, res) => {
   try {
-    const clerkId = req.auth.userId;
+    const auth = typeof req.auth === 'function' ? req.auth() : req.auth;
+    const clerkId = auth?.userId;
     if (!clerkId) return res.status(401).json({ success: false, message: 'Unauthorized' });
 
     const { targetUserId } = req.body; // targetUserId là MongoDB ObjectId của người kia
 
     const user = await User.findOne({ clerkId }).select('_id');
-    
+    const userId = user._id;
+
+    // Check if either user has blocked the other
+    const blockExists = await Block.findOne({
+        $or: [
+            { blockerId: userId, blockedId: targetUserId },
+            { blockerId: targetUserId, blockedId: userId }
+        ]
+    });
+
+    if (blockExists) {
+        return res.status(403).json({ success: false, message: "Cannot message a blocked user" });
+    }
+
     // Kiểm tra xem đã có conversation giữa 2 người chưa
     let conversation = await Conversation.findOne({
       participants: { $all: [user._id, targetUserId] }

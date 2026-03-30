@@ -8,6 +8,7 @@ import {
 import { User } from '../models/user.model.js';
 import { Connection } from '../models/connection.model.js';
 import { MatchSuggestion } from '../models/matchSuggestion.model.js';
+import { Block } from '../models/safety.js';
 
 const resolveAuthContext = (req) => {
     try {
@@ -123,11 +124,27 @@ export const getDiscoverUsers = async (req, res) => {
             ]
         });
 
-        const excludedIds = existingConnections.reduce((acc, curr) => {
-            if (curr.senderId.toString() !== currentUser._id.toString()) acc.push(curr.senderId);
-            if (curr.receiverId.toString() !== currentUser._id.toString()) acc.push(curr.receiverId);
-            return acc;
-        }, [currentUser._id]); // Exclude self too
+        // Also get blocked users (either I blocked them or they blocked me)
+        const blockedRecords = await Block.find({
+            $or: [
+                { blockerId: currentUser._id },
+                { blockedId: currentUser._id }
+            ]
+        });
+
+        const excludedIds = [
+            ...existingConnections.reduce((acc, curr) => {
+                if (curr.senderId.toString() !== currentUser._id.toString()) acc.push(curr.senderId);
+                if (curr.receiverId.toString() !== currentUser._id.toString()) acc.push(curr.receiverId);
+                return acc;
+            }, []),
+            ...blockedRecords.reduce((acc, curr) => {
+                if (curr.blockerId.toString() !== currentUser._id.toString()) acc.push(curr.blockerId);
+                if (curr.blockedId.toString() !== currentUser._id.toString()) acc.push(curr.blockedId);
+                return acc;
+            }, []),
+            currentUser._id // Exclude self too
+        ];
 
         // MatchSuggestion.find logic to populate suggested users
         const suggestions = await MatchSuggestion.find({ userId: currentUser._id }).populate(
