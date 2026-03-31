@@ -2,7 +2,8 @@
 
 VibeMatch is a modern, vibrant dating platform built with the Gen Z audience in mind. Stop swiping on ghosts and start meeting verified profiles, discovering people with chaotic good energy, and matching with those who pass the vibe check.
 
-![UI Screenshot](https://via.placeholder.com/800x400.png?text=VibeMatch+Preview) 
+<img width="2844" height="1540" alt="image" src="https://github.com/user-attachments/assets/51837777-feb9-4dfa-88c9-f1b31e10b0b3" />
+
 
 ## ✨ Key Features
 
