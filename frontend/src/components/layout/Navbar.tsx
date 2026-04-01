@@ -187,7 +187,7 @@ export const Navbar = ({ isAuthenticated = false }: NavbarProps) => {
 
           {/* Auth Buttons */}
           {!isAuthenticated && (
-            <div className="hidden md:flex items-center gap-2 shrink-0">
+            <div className="hidden md:flex items-center gap-2 shrink-0 ml-auto">
               <Link to="/login">
                 <Button
                   variant="ghost"

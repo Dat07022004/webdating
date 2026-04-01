@@ -5,14 +5,14 @@ import { createClerkClient } from '@clerk/express';
 import { ENV } from '../config/env.js';
 
 const clerkClient = createClerkClient({
-  secretKey: ENV.CLERK_SECRET_KEY,
-  publishableKey: ENV.CLERK_PUBLISHABLE_KEY,
+    secretKey: ENV.CLERK_SECRET_KEY,
+    publishableKey: ENV.CLERK_PUBLISHABLE_KEY,
 });
 
 export const getAllUsers = async (req, res) => {
     try {
         const users = await User.find().select('_id clerkId email username role profile status createdAt');
-        
+
         // Let's also find who is banned so frontend can show the status
         const bannedUsers = await UserBanned.find().select('userId reason expiresAt');
         const bannedMap = new Map();
@@ -64,7 +64,7 @@ export const banUser = async (req, res) => {
         });
 
         await newBan.save();
-        
+
         // In a real scenario we could also revoke clerk active sessions here:
         // await clerkClient.users.banUser(targetUser.clerkId);
         // But for simplicity, our own middleware could check UserBanned before allowing access.
@@ -72,8 +72,8 @@ export const banUser = async (req, res) => {
 
         res.status(200).json({ message: `Successfully banned ${targetUser.username}`, banInfo: newBan });
     } catch (error) {
-         console.error('Error banning user:', error);
-         res.status(500).json({ message: 'Server error when banning user' });
+        console.error('Error banning user:', error);
+        res.status(500).json({ message: 'Server error when banning user' });
     }
 };
 
