@@ -46,7 +46,7 @@ export const SocketNotificationListener = () => {
     });
 
     // Lắng nghe thông báo chung (Like, v.v.)
-    socket.on('new_notification', (data: { type: string, title?: string, message?: string }) => {
+    socket.on('new_notification', (data: { type: string, title?: string, message?: string, metadata?: any }) => {
       // Invalidate counts immediately
       queryClient.invalidateQueries({ queryKey: ["unread-counts"] });
 
@@ -59,6 +59,15 @@ export const SocketNotificationListener = () => {
             onClick: () => navigate('/notifications')
           },
           duration: 4000
+        });
+      } else if (data.type === 'match') {
+        toast.success(data.title || 'Tương hợp mới!', {
+          description: data.message || 'Bạn và ai đó đã tương hợp.',
+          action: {
+            label: 'Xem ngay',
+            onClick: () => navigate('/matches')
+          },
+          duration: 5000
         });
       }
     });

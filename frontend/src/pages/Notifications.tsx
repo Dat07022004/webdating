@@ -2,6 +2,7 @@ import { motion } from "framer-motion";
 import { Bell, Heart, MessageCircle, Calendar, Star, UserCheck, Settings, CheckCheck } from "lucide-react";
 import { Layout } from "@/components/layout/Layout";
 import { Button } from "@/components/ui/button";
+import { useNavigate } from "react-router-dom";
 import { cn } from "@/lib/utils";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@clerk/clerk-react";
@@ -16,6 +17,7 @@ interface NotificationData {
   createdAt: string;
   read: boolean;
   image?: string;
+  metadata?: any;
 }
 
 const getIcon = (type: string) => {
@@ -48,6 +50,7 @@ const getIconColor = (type: string) => {
 
 export default function Notifications() {
   const { getToken } = useAuth();
+  const navigate = useNavigate();
   const queryClient = useQueryClient();
   const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000';
 
@@ -90,6 +93,31 @@ export default function Notifications() {
       queryClient.invalidateQueries({ queryKey: ["unread-counts"] });
     }
   });
+
+  const handleNotificationClick = (notification: NotificationData) => {
+    // 1. Mark as read if not already
+    if (!notification.read) {
+      markReadMutation.mutate(notification._id);
+    }
+
+    // 2. Navigate based on type
+    switch (notification.type) {
+      case "match":
+        navigate("/matches");
+        break;
+      case "message":
+        navigate("/messages");
+        break;
+      case "like":
+        navigate("/notifications");
+        break;
+      case "appointment":
+        navigate("/appointments");
+        break;
+      default:
+        break;
+    }
+  };
 
   const notifications = data || [];
   const unreadCount = notifications.filter((n) => !n.read).length;
@@ -139,7 +167,7 @@ export default function Notifications() {
                   initial={{ opacity: 0, y: 20 }}
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ delay: i * 0.05 }}
-                  onClick={() => !notification.read && markReadMutation.mutate(notification._id)}
+                  onClick={() => handleNotificationClick(notification)}
                   className={cn(
                     "p-4 rounded-2xl flex items-start gap-4 cursor-pointer transition-colors border border-transparent",
                     notification.read

@@ -10,6 +10,7 @@ import chatRoutes from "./routes/chat.routes.js";
 import uploadRoutes from "./routes/upload.routes.js";
 import premiumRoutes from "./routes/premium.routes.js";
 import notificationRoutes from "./routes/notification.routes.js";
+import adminRoutes from "./routes/admin.route.js";
 
 import { functions, inngest } from "./config/inngest.js";
 import http from "http";
@@ -37,6 +38,7 @@ app.use("/api/chat", chatRoutes);
 app.use("/api/upload", uploadRoutes);
 app.use("/api/premium", premiumRoutes);
 app.use("/api/notifications", notificationRoutes);
+app.use("/api/admin", adminRoutes);
 app.use("/api", healthRoutes);
 
 import fs from 'fs';

@@ -19,6 +19,7 @@ import DateSpots from "./pages/DateSpots";
 import BookAppointment from "./pages/BookAppointment";
 import Appointments from "./pages/Appointments";
 import DateReview from "./pages/DateReview";
+import AdminDashboard from "./pages/AdminDashboard";
 import NotFound from "./pages/NotFound";
 import { SocketNotificationListener } from "./components/SocketNotificationListener";
 
@@ -54,6 +55,7 @@ const App = () => (
           <Route path="/appointments/book" element={<ProtectedRoute><BookAppointment /></ProtectedRoute>} />
           <Route path="/appointments" element={<ProtectedRoute><Appointments /></ProtectedRoute>} />
           <Route path="/review/:id" element={<ProtectedRoute><DateReview /></ProtectedRoute>} />
+          <Route path="/admin" element={<ProtectedRoute><AdminDashboard /></ProtectedRoute>} />
           <Route path="*" element={<NotFound />} />
         </Routes>
       </BrowserRouter>
