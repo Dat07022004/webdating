@@ -68,10 +68,19 @@ export default function Discover() {
       });
     }
 
+    const actedUserId = currentUser.id;
+
     setTimeout(() => {
-      if (users.length > 0) {
-        setCurrentIndex((prev) => (prev + 1) % users.length);
-      }
+      setUsers((prevUsers) => {
+        const nextUsers = prevUsers.filter((user) => user.id !== actedUserId);
+        setCurrentIndex((prevIndex) => {
+          if (nextUsers.length === 0) {
+            return 0;
+          }
+          return prevIndex >= nextUsers.length ? nextUsers.length - 1 : prevIndex;
+        });
+        return nextUsers;
+      });
       setDirection(null);
     }, 300);
 

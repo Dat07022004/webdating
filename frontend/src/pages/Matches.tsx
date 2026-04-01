@@ -1,12 +1,11 @@
 import { useEffect, useState } from "react";
 import { useAuth } from "@clerk/clerk-react";
-import { motion, AnimatePresence } from "framer-motion";
+import { motion } from "framer-motion";
 import { Heart, Sparkles } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { Layout } from "@/components/layout/Layout";
 import { MatchCard } from "@/components/cards/MatchCard";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
 
 interface MatchUser {
@@ -174,37 +173,21 @@ export default function Matches() {
               {isLoading ? (
                   <p className="text-muted-foreground text-center">Loading likes...</p>
               ) : likes.length > 0 ? (
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4">
                   {likes.map((like, i) => (
                     <motion.div
                       key={like.id}
                       initial={{ opacity: 0, y: 20 }}
                       animate={{ opacity: 1, y: 0 }}
-                      transition={{ delay: i * 0.08 }}
-                      className="rounded-2xl bg-card p-4 shadow-card border border-border"
+                      transition={{ delay: i * 0.05 }}
                     >
-                      <div className="flex items-center gap-3">
-                        <img
-                          src={like.image}
-                          alt={like.name}
-                          className="w-16 h-16 rounded-full object-cover ring-2 ring-primary"
-                        />
-                        <div>
-                          <h3 className="font-semibold text-foreground">
-                            {like.name}, {like.age}
-                          </h3>
-                          <p className="text-sm text-muted-foreground">{like.lastActive}</p>
-                        </div>
-                      </div>
-
-                      <Button
-                        className="w-full mt-4 gap-2"
-                        variant="default"
+                      <MatchCard
+                        user={like}
+                        actionLabel="Accept"
+                        actionIcon="heart"
                         onClick={() => handleAccept(like.id)}
-                      >
-                        <Heart className="w-4 h-4" />
-                        Match With {like.name}
-                      </Button>
+                        onAction={() => handleAccept(like.id)}
+                      />
                     </motion.div>
                   ))}
                 </div>
@@ -219,32 +202,24 @@ export default function Matches() {
               {isLoading ? (
                   <p className="text-muted-foreground text-center">Loading sent requests...</p>
               ) : sent.length > 0 ? (
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4">
                   {sent.map((item, i) => (
                     <motion.div
                       key={item.user.id}
                       initial={{ opacity: 0, y: 20 }}
                       animate={{ opacity: 1, y: 0 }}
-                      transition={{ delay: i * 0.08 }}
-                      className="rounded-2xl bg-card p-4 shadow-card border border-border opacity-80 hover:opacity-100 transition-opacity"
+                      transition={{ delay: i * 0.05 }}
                     >
-                      <div className="flex items-center gap-3">
-                        <img
-                          src={item.user.image}
-                          alt={item.user.name}
-                          className="w-16 h-16 rounded-full object-cover grayscale transition-all duration-300 hover:grayscale-0"
-                        />
-                        <div>
-                          <h3 className="font-semibold text-foreground">
-                            {item.user.name}, {item.user.age}
-                          </h3>
-                          <p className="text-sm text-yellow-600 dark:text-yellow-500 font-medium">Pending accept</p>
-                        </div>
-                      </div>
-
-                      <Button className="w-full mt-4" variant="secondary" disabled>
-                        Waiting for response
-                      </Button>
+                      <MatchCard
+                        user={{
+                          ...item.user,
+                          lastActive: "Pending accept"
+                        }}
+                        actionLabel="Waiting for response"
+                        actionDisabled
+                        className="opacity-80 hover:opacity-100 transition-opacity"
+                        actionClassName="cursor-not-allowed"
+                      />
                     </motion.div>
                   ))}
                 </div>
