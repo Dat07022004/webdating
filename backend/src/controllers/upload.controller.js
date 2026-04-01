@@ -1,30 +1,26 @@
 import cloudinary from '../config/cloudinary.js';
 
-export const uploadImage = async (req, res) => {
-  try {
-    if (!req.file) {
-      return res.status(400).json({ success: false, message: 'No file uploaded' });
-    }
+const createError = (statusCode, message) => {
+  const error = new Error(message);
+  error.statusCode = statusCode;
+  return error;
+};
 
-    // Convert buffer to base64
-    const b64 = Buffer.from(req.file.buffer).toString('base64');
-    let dataURI = 'data:' + req.file.mimetype + ';base64,' + b64;
-
-    const result = await cloudinary.uploader.upload(dataURI, {
-      folder: 'webdating/chat-images',
-      resource_type: 'image',
-    });
-
-    res.status(200).json({ 
-      success: true, 
-      data: {
-        url: result.secure_url,
-        publicId: result.public_id
-      }
-    });
-
-  } catch (error) {
-    console.error('uploadImage error:', error);
-    res.status(500).json({ success: false, message: 'Image upload failed' });
+export const uploadImage = async ({ file }) => {
+  if (!file) {
+    throw createError(400, 'No file uploaded');
   }
+
+  const b64 = Buffer.from(file.buffer).toString('base64');
+  const dataURI = `data:${file.mimetype};base64,${b64}`;
+
+  const result = await cloudinary.uploader.upload(dataURI, {
+    folder: 'webdating/chat-images',
+    resource_type: 'image',
+  });
+
+  return {
+    url: result.secure_url,
+    publicId: result.public_id
+  };
 };
