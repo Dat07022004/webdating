@@ -1,4 +1,4 @@
-import { useRef, useState, type ChangeEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type ChangeEvent } from "react";
 import { useNavigate } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import { useUser } from "@clerk/clerk-react";
@@ -18,6 +18,13 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { cn } from "@/lib/utils";
 
 const steps = [
@@ -40,12 +47,32 @@ type UploadedPhoto = {
   publicId?: string;
 };
 
+type Province = {
+  province_code: string;
+  name: string;
+};
+
+type Ward = {
+  ward_code: string;
+  ward_name: string;
+  province_code: string;
+};
+
 export default function Onboarding() {
   const [currentStep, setCurrentStep] = useState(1);
   const [isSaving, setIsSaving] = useState(false);
   const [isUploadingPhotos, setIsUploadingPhotos] = useState(false);
   const [saveError, setSaveError] = useState("");
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const [provinces, setProvinces] = useState<Province[]>([]);
+  const [wards, setWards] = useState<Ward[]>([]);
+  const [selectedProvinceCode, setSelectedProvinceCode] = useState("");
+  const [selectedWardCode, setSelectedWardCode] = useState("");
+  const [isLoadingProvinces, setIsLoadingProvinces] = useState(false);
+  const [isLoadingWards, setIsLoadingWards] = useState(false);
+  const [isLocating, setIsLocating] = useState(false);
+  const [locationError, setLocationError] = useState("");
+  const [coordinates, setCoordinates] = useState<{ lat: number; lng: number } | null>(null);
   const [formData, setFormData] = useState({
     birthday: "",
     gender: "",
@@ -57,6 +84,77 @@ export default function Onboarding() {
   });
   const navigate = useNavigate();
   const { user } = useUser();
+
+  const selectedProvince = useMemo(
+    () => provinces.find((province) => province.province_code === selectedProvinceCode) || null,
+    [provinces, selectedProvinceCode]
+  );
+
+  useEffect(() => {
+    let isActive = true;
+
+    const loadProvinces = async () => {
+      setIsLoadingProvinces(true);
+      try {
+        const response = await fetch("https://34tinhthanh.com/api/provinces");
+        const data = (await response.json().catch(() => [])) as Province[];
+        if (isActive) {
+          setProvinces(Array.isArray(data) ? data : []);
+        }
+      } catch {
+        if (isActive) {
+          setProvinces([]);
+        }
+      } finally {
+        if (isActive) {
+          setIsLoadingProvinces(false);
+        }
+      }
+    };
+
+    void loadProvinces();
+
+    return () => {
+      isActive = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!selectedProvinceCode) {
+      setWards([]);
+      setSelectedWardCode("");
+      return;
+    }
+
+    let isActive = true;
+
+    const loadWards = async () => {
+      setIsLoadingWards(true);
+      try {
+        const response = await fetch(
+          `https://34tinhthanh.com/api/wards?province_code=${selectedProvinceCode}`
+        );
+        const data = (await response.json().catch(() => [])) as Ward[];
+        if (isActive) {
+          setWards(Array.isArray(data) ? data : []);
+        }
+      } catch {
+        if (isActive) {
+          setWards([]);
+        }
+      } finally {
+        if (isActive) {
+          setIsLoadingWards(false);
+        }
+      }
+    };
+
+    void loadWards();
+
+    return () => {
+      isActive = false;
+    };
+  }, [selectedProvinceCode]);
 
   const saveOnboarding = async () => {
     setIsSaving(true);
@@ -133,6 +231,118 @@ export default function Onboarding() {
         ? prev.interests.filter((i) => i !== interest)
         : [...prev.interests, interest],
     }));
+  };
+
+  const formatLocation = (provinceName?: string, wardName?: string) => {
+    if (!provinceName && !wardName) return "";
+    if (provinceName && wardName) return `${wardName}, ${provinceName}`;
+    return provinceName || wardName || "";
+  };
+
+  const handleProvinceChange = (value: string) => {
+    const province = provinces.find((item) => item.province_code === value);
+    setSelectedProvinceCode(value);
+    setSelectedWardCode("");
+    setFormData((prev) => ({
+      ...prev,
+      location: formatLocation(province?.name),
+    }));
+  };
+
+  const handleWardChange = (value: string) => {
+    const ward = wards.find((item) => item.ward_code === value);
+    setSelectedWardCode(value);
+    setFormData((prev) => ({
+      ...prev,
+      location: formatLocation(selectedProvince?.name, ward?.ward_name),
+    }));
+  };
+
+  const reverseGeocode = async (lat: number, lng: number) => {
+    try {
+      const response = await fetch(
+        `https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${lat}&lon=${lng}`
+      );
+      if (!response.ok) {
+        return "";
+      }
+      const data = (await response.json().catch(() => null)) as
+        | {
+            display_name?: string;
+            address?: {
+              suburb?: string;
+              neighbourhood?: string;
+              quarter?: string;
+              city_district?: string;
+              city?: string;
+              town?: string;
+              village?: string;
+              county?: string;
+              state?: string;
+              region?: string;
+            };
+          }
+        | null;
+      if (!data?.address) {
+        return data?.display_name || "";
+      }
+
+      const wardName =
+        data.address.suburb ||
+        data.address.neighbourhood ||
+        data.address.quarter ||
+        data.address.city_district ||
+        "";
+      const provinceName =
+        data.address.state ||
+        data.address.city ||
+        data.address.town ||
+        data.address.village ||
+        data.address.region ||
+        data.address.county ||
+        "";
+
+      return formatLocation(provinceName, wardName) || data.display_name || "";
+    } catch {
+      return "";
+    }
+  };
+
+  const handleUseCurrentLocation = () => {
+    if (!navigator.geolocation) {
+      setLocationError("Geolocation is not supported on this device.");
+      return;
+    }
+
+    setIsLocating(true);
+    setLocationError("");
+
+    navigator.geolocation.getCurrentPosition(
+      async (position) => {
+        const { latitude, longitude } = position.coords;
+        setCoordinates({ lat: latitude, lng: longitude });
+        const resolvedLocation = await reverseGeocode(latitude, longitude);
+        const fallbackLocation = `${latitude.toFixed(5)}, ${longitude.toFixed(5)}`;
+        setFormData((prev) => ({
+          ...prev,
+          location: resolvedLocation || fallbackLocation,
+        }));
+        setIsLocating(false);
+      },
+      (error) => {
+        if (error.code === error.PERMISSION_DENIED) {
+          setLocationError("Location permission denied.");
+        } else if (error.code === error.POSITION_UNAVAILABLE) {
+          setLocationError("Location information is unavailable.");
+        } else if (error.code === error.TIMEOUT) {
+          setLocationError("Location request timed out.");
+        } else {
+          setLocationError("Unable to retrieve your location.");
+        }
+        setIsLocating(false);
+      },
+      { enableHighAccuracy: true, timeout: 15000, maximumAge: 60000 }
+    );
   };
 
   const openPhotoPicker = () => {
@@ -319,16 +529,71 @@ export default function Onboarding() {
                 </div>
                 <div className="space-y-2">
                   <Label>Location</Label>
-                  <div className="relative">
-                    <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground" />
-                    <Input
-                      placeholder="Enter your city"
-                      value={formData.location}
-                      onChange={(e) =>
-                        setFormData({ ...formData, location: e.target.value })
-                      }
-                      className="pl-10 h-12"
-                    />
+                  <div className="space-y-2">
+                    <div className="relative">
+                      <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground" />
+                      <Select
+                        value={selectedProvinceCode}
+                        onValueChange={handleProvinceChange}
+                      >
+                        <SelectTrigger className="pl-10 h-12">
+                          <SelectValue
+                            placeholder={
+                              isLoadingProvinces ? "Loading provinces..." : "Select province"
+                            }
+                          />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {provinces.map((province) => (
+                            <SelectItem key={province.province_code} value={province.province_code}>
+                              {province.name}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <Select
+                      value={selectedWardCode}
+                      onValueChange={handleWardChange}
+                      disabled={!selectedProvinceCode || isLoadingWards}
+                    >
+                      <SelectTrigger className="h-12">
+                        <SelectValue
+                          placeholder={
+                            !selectedProvinceCode
+                              ? "Select ward"
+                              : isLoadingWards
+                              ? "Loading wards..."
+                              : "Select ward"
+                          }
+                        />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {wards.map((ward) => (
+                          <SelectItem key={ward.ward_code} value={ward.ward_code}>
+                            {ward.ward_name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={handleUseCurrentLocation}
+                      disabled={isLocating}
+                      className="w-full"
+                    >
+                      {isLocating ? "Locating..." : "Use current location"}
+                    </Button>
+                    {locationError && (
+                      <p className="text-xs text-destructive">{locationError}</p>
+                    )}
+                    {coordinates && !locationError && (
+                      <p className="text-xs text-muted-foreground">
+                        Coordinates: {coordinates.lat.toFixed(5)}, {coordinates.lng.toFixed(5)}
+                      </p>
+                    )}
                   </div>
                 </div>
               </div>
