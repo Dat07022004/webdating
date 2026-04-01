@@ -758,7 +758,7 @@ export default function Profile() {
                   </div>
                 ) : (
                   <h1 className="font-serif text-2xl font-bold text-foreground flex items-center gap-2">
-                    <UserButton />
+                    
                     <span>
                       {profile.name}
                       {profile.age !== null ? `, ${profile.age}` : ""}

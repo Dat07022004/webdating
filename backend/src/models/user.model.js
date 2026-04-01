@@ -36,6 +36,11 @@ const userSchema = new mongoose.Schema({
         required: true,
         unique: true
     },
+    role: {
+        type: String,
+        enum: ['admin', 'manager', 'user'],
+        default: 'user'
+    },
     isVerified: { type: Boolean, default: false },
     profile: {
         avatarUrl: { type: String, default: '' },
