@@ -8,6 +8,9 @@ import {
 import { User } from '../models/user.model.js';
 import { Connection } from '../models/connection.model.js';
 import { MatchSuggestion } from '../models/matchSuggestion.model.js';
+import { Notification } from '../models/notification.model.js';
+import { getIO } from '../socket/index.js';
+import { getSocketIds } from '../socket/onlineUsers.js';
 
 const resolveAuthContext = (req) => {
     try {
@@ -218,6 +221,59 @@ export const handleUserAction = async (req, res) => {
                 // Target liked me first, and now I'm liking back!
                 existingConnection.status = 'matched';
                 await existingConnection.save();
+
+                try {
+                    const io = getIO();
+                    const targetUser = await User.findById(targetUserId).select('profile.personalInfo.name username profile.avatarUrl');
+                    const senderName = currentUser.profile?.personalInfo?.name || currentUser.username || 'Ai đó';
+                    const targetName = targetUser?.profile?.personalInfo?.name || targetUser?.username || 'Ai đó';
+
+                    // Tạo thông báo lữu trữ trong DB cho cả 2
+                    await Notification.create([
+                        {
+                            userId: currentUser._id,
+                            senderId: targetUserId,
+                            type: 'match',
+                            title: 'New Match!',
+                            message: `Bạn và ${targetName} đã tương hợp! Bắt đầu trò chuyện ngay.`,
+                            image: targetUser?.profile?.avatarUrl,
+                            metadata: { connectionId: existingConnection._id }
+                        },
+                        {
+                            userId: targetUserId,
+                            senderId: currentUser._id,
+                            type: 'match',
+                            title: 'New Match!',
+                            message: `Bạn và ${senderName} đã tương hợp! Bắt đầu trò chuyện ngay.`,
+                            image: currentUser.profile?.avatarUrl,
+                            metadata: { connectionId: existingConnection._id }
+                        }
+                    ]);
+
+                    const senderSockets = getSocketIds(currentUser._id.toString());
+                    const receiverSockets = getSocketIds(targetUserId);
+                    
+                    // Phát sự kiện socket để báo hiệu có thông báo mới (unread count update)
+                    [...senderSockets, ...receiverSockets].forEach(sid => io.to(sid).emit('new_notification', { type: 'match' }));
+
+                    const matchDataForSender = {
+                        matchWith: targetName,
+                        connectionId: existingConnection._id,
+                        userId: targetUserId
+                    };
+
+                    const matchDataForReceiver = {
+                        matchWith: senderName,
+                        connectionId: existingConnection._id,
+                        userId: currentUser._id.toString()
+                    };
+
+                    senderSockets.forEach(sid => io.to(sid).emit('new_match', matchDataForSender));
+                    receiverSockets.forEach(sid => io.to(sid).emit('new_match', matchDataForReceiver));
+                } catch (socketError) {
+                    console.error('[Socket] Failed to emit new_match event:', socketError.message);
+                }
+
                 return res.status(200).json({ message: 'Matched', connectionId: existingConnection._id });
             }
 
@@ -237,6 +293,26 @@ export const handleUserAction = async (req, res) => {
             status: action === 'like' ? 'pending' : 'rejected' // pass -> rejected
         });
         await newConnection.save();
+
+        // Nếu là LIKE, tạo thông báo ẩn danh cho người nhận
+        if (action === 'like') {
+            try {
+                await Notification.create({
+                    userId: targetUserId,
+                    senderId: currentUser._id, // Vẫn lưu senderId để reference nhưng tiêu đề sẽ ẩn danh
+                    type: 'like',
+                    title: 'Someone Likes You!',
+                    message: 'Ai đó đã thích hồ sơ của bạn. Nâng cấp để xem là ai!',
+                    image: null // Ẩn ảnh
+                });
+
+                const io = getIO();
+                const receiverSockets = getSocketIds(targetUserId);
+                receiverSockets.forEach(sid => io.to(sid).emit('new_notification', { type: 'like' }));
+            } catch (err) {
+                console.error('[Notification] Like notification failed:', err.message);
+            }
+        }
 
         res.status(200).json({ message: 'Action handled successfully' });
     } catch (error) {

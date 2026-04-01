@@ -20,6 +20,7 @@ import BookAppointment from "./pages/BookAppointment";
 import Appointments from "./pages/Appointments";
 import DateReview from "./pages/DateReview";
 import NotFound from "./pages/NotFound";
+import { SocketNotificationListener } from "./components/SocketNotificationListener";
 
 const queryClient = new QueryClient();
 
@@ -36,6 +37,7 @@ const App = () => (
       <Toaster />
       <Sonner />
       <BrowserRouter>
+        <SocketNotificationListener />
         <Routes>
           <Route path="/" element={<Landing />} />
           <Route path="/login" element={<Login />} />

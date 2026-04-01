@@ -92,3 +92,24 @@ export const createConversation = async (req, res) => {
     res.status(500).json({ success: false, message: 'Server error' });
   }
 };
+
+export const markConversationAsSeen = async (req, res) => {
+  try {
+    const clerkId = req.auth.userId;
+    const { conversationId } = req.params;
+
+    const user = await User.findOne({ clerkId }).select('_id');
+    if (!user) return res.status(404).json({ success: false, message: 'User not found' });
+
+    // Cập nhật tất cả tin nhắn mà mình là người nhận trong conversation này thành đã xem
+    await Message.updateMany(
+      { conversationId, receiverId: user._id, seen: false },
+      { $set: { seen: true, seenAt: new Date() } }
+    );
+
+    res.status(200).json({ success: true, message: 'Conversation marked as seen' });
+  } catch (error) {
+    console.error('markConversationAsSeen error:', error);
+    res.status(500).json({ success: false, message: 'Server error' });
+  }
+};

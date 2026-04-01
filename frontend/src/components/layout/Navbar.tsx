@@ -5,6 +5,8 @@ import { Heart, MessageCircle, Bell, User, Menu, X, Sparkles, MapPin, CalendarDa
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
+import { useQuery } from "@tanstack/react-query";
+import { useAuth } from "@clerk/clerk-react";
 
 interface NavbarProps {
   isAuthenticated?: boolean;
@@ -23,14 +25,30 @@ export const Navbar = ({ isAuthenticated = false }: NavbarProps) => {
     return () => window.removeEventListener("scroll", handleScroll);
   }, []);
 
+  const { getToken } = useAuth();
+  const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000';
+
+  const { data: unreadCounts } = useQuery({
+    queryKey: ["unread-counts"],
+    queryFn: async () => {
+      const token = await getToken();
+      const res = await fetch(`${API_URL}/api/notifications/unread-counts`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      return await res.json();
+    },
+    enabled: isAuthenticated,
+    refetchInterval: 60000, // Tự động refetch mỗi phút đề phòng socket lỗi
+  });
+
   const navLinks = isAuthenticated
     ? [
       { to: "/discover", label: "Discover", icon: Sparkles },
       { to: "/matches", label: "Matches", icon: Heart },
-      { to: "/messages", label: "Chat", icon: MessageCircle, badge: 3 },
+      { to: "/messages", label: "Chat", icon: MessageCircle, badge: unreadCounts?.messageCount },
       { to: "/date-spots", label: "Date Spots", icon: MapPin },
       { to: "/appointments", label: "Dates", icon: CalendarDays },
-      { to: "/notifications", label: "Activity", icon: Bell, badge: 5 },
+      { to: "/notifications", label: "Activity", icon: Bell, badge: unreadCounts?.notificationCount },
       { to: "/premium", label: "Premium", icon: Crown },
       { to: "/profile", label: "Profile", icon: User },
     ]
@@ -70,7 +88,7 @@ export const Navbar = ({ isAuthenticated = false }: NavbarProps) => {
                     >
                       <link.icon className={cn("w-4 h-4 mr-2", isActive && "fill-[#FF4D8D]/20")} />
                       <span className="hidden lg:inline">{link.label}</span>
-                      {link.badge && (
+                      {link.badge !== undefined && link.badge > 0 && (
                         <Badge className="absolute -top-1 -right-1 h-5 min-w-5 px-1 flex items-center justify-center bg-gradient-to-r from-[#FF4D8D] to-[#FF8E53] text-[10px] text-white font-black border-2 border-white rounded-full">
                           {link.badge}
                         </Badge>
@@ -142,7 +160,7 @@ export const Navbar = ({ isAuthenticated = false }: NavbarProps) => {
                           <link.icon className={cn("w-5 h-5", isActive && "fill-[#FF4D8D]/20")} />
                         </div>
                         {link.label}
-                        {link.badge && (
+                        {link.badge !== undefined && link.badge > 0 && (
                           <Badge className="ml-auto bg-[#FF4D8D] shadow-[0_0_10px_rgba(255,77,141,0.5)] text-white border-0 rounded-full px-2">
                             {link.badge} new
                           </Badge>

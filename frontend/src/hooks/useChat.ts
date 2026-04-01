@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '@clerk/clerk-react';
 import { useSocket } from './useSocket';
+import { useQueryClient } from '@tanstack/react-query';
 
 export interface ChatUser {
   _id: string;
@@ -34,6 +35,7 @@ export interface Message {
 export const useChat = (activeConversationId?: string | null) => {
   const { getToken, userId: currentClerkId } = useAuth();
   const { socket } = useSocket();
+  const queryClient = useQueryClient();
   
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [messages, setMessages] = useState<Message[]>([]);
@@ -77,9 +79,25 @@ export const useChat = (activeConversationId?: string | null) => {
     fetchConversations();
   }, [fetchConversations]);
 
+  const markAsSeen = useCallback(async (conversationId: string) => {
+    try {
+      const token = await getToken();
+      if (!token) return;
+      await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:3000'}/api/chat/conversations/${conversationId}/seen`, {
+        method: 'PATCH',
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      // Invalidate the unread counts after marking as seen
+      queryClient.invalidateQueries({ queryKey: ["unread-counts"] });
+    } catch (e) {
+      console.error('markAsSeen error:', e);
+    }
+  }, [getToken, queryClient]);
+
   useEffect(() => {
     if (activeConversationId) {
       fetchMessages(activeConversationId);
+      markAsSeen(activeConversationId);
       if (socket) {
         socket.emit('join_conversation', activeConversationId);
       }
@@ -108,6 +126,11 @@ export const useChat = (activeConversationId?: string | null) => {
           messageIds: [message._id],
           conversationId: activeConversationId
         });
+        // Since we are viewing it, also trigger the backend seen API to be sure
+        markAsSeen(activeConversationId);
+      } else {
+        // If it's for another conversation, invalidate the counts only
+        queryClient.invalidateQueries({ queryKey: ["unread-counts"] });
       }
       
       // Update last message in the conversations list
