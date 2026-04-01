@@ -98,6 +98,7 @@ const toProfileDto = (user) => {
         email: user.email,
         phone: user.phone || '',
         username: user.username,
+        role: user.role || 'user',
         name: user?.profile?.personalInfo?.name || user.username,
         age: Number.isFinite(user?.profile?.personalInfo?.age) ? user.profile.personalInfo.age : null,
         birthday: user?.profile?.personalInfo?.birthday || null,

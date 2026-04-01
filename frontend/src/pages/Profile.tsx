@@ -20,6 +20,13 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { Separator } from "@/components/ui/separator";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { UserButton, useClerk, useUser, useAuth } from "@clerk/clerk-react";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -29,6 +36,17 @@ type ProfilePhoto = {
   url: string;
   publicId?: string;
   isPrimary?: boolean;
+};
+
+type Province = {
+  province_code: string;
+  name: string;
+};
+
+type Ward = {
+  ward_code: string;
+  ward_name: string;
+  province_code: string;
 };
 
 const MAX_PROFILE_PHOTOS = 6;
@@ -95,6 +113,15 @@ export default function Profile() {
   const [newInterest, setNewInterest] = useState("");
   const [premiumPlan, setPremiumPlan] = useState<{ plan: string; expiresAt: string | null; isActive: boolean } | null>(null);
   const [isLoadingPlan, setIsLoadingPlan] = useState(true);
+  const [provinces, setProvinces] = useState<Province[]>([]);
+  const [wards, setWards] = useState<Ward[]>([]);
+  const [selectedProvinceCode, setSelectedProvinceCode] = useState("");
+  const [selectedWardCode, setSelectedWardCode] = useState("");
+  const [isLoadingProvinces, setIsLoadingProvinces] = useState(false);
+  const [isLoadingWards, setIsLoadingWards] = useState(false);
+  const [isLocating, setIsLocating] = useState(false);
+  const [locationError, setLocationError] = useState("");
+  const [coordinates, setCoordinates] = useState<{ lat: number; lng: number } | null>(null);
 
   const activeProfile = isEditing ? draft : profile;
 
@@ -105,6 +132,12 @@ export default function Profile() {
 
     return "https://images.unsplash.com/photo-1488426862026-3ee34a7d66df?w=300&h=400&fit=crop";
   }, [activeProfile.photos]);
+
+  const selectedProvince = useMemo(
+    () => provinces.find((province) => province.province_code === selectedProvinceCode) || null,
+    [provinces, selectedProvinceCode]
+  );
+
 
   useEffect(() => {
     if (!isLoaded) {
@@ -202,6 +235,94 @@ export default function Profile() {
     void loadPlan();
   }, [getToken, isLoaded]);
 
+  useEffect(() => {
+    let isActive = true;
+
+    const loadProvinces = async () => {
+      setIsLoadingProvinces(true);
+      try {
+        const response = await fetch("https://34tinhthanh.com/api/provinces");
+        const data = (await response.json().catch(() => [])) as Province[];
+        if (isActive) {
+          setProvinces(Array.isArray(data) ? data : []);
+        }
+      } catch {
+        if (isActive) {
+          setProvinces([]);
+        }
+      } finally {
+        if (isActive) {
+          setIsLoadingProvinces(false);
+        }
+      }
+    };
+
+    void loadProvinces();
+
+    return () => {
+      isActive = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!selectedProvinceCode) {
+      setWards([]);
+      setSelectedWardCode("");
+      return;
+    }
+
+    let isActive = true;
+
+    const loadWards = async () => {
+      setIsLoadingWards(true);
+      try {
+        const response = await fetch(
+          `https://34tinhthanh.com/api/wards?province_code=${selectedProvinceCode}`
+        );
+        const data = (await response.json().catch(() => [])) as Ward[];
+        if (isActive) {
+          setWards(Array.isArray(data) ? data : []);
+        }
+      } catch {
+        if (isActive) {
+          setWards([]);
+        }
+      } finally {
+        if (isActive) {
+          setIsLoadingWards(false);
+        }
+      }
+    };
+
+    void loadWards();
+
+    return () => {
+      isActive = false;
+    };
+  }, [selectedProvinceCode]);
+
+  useEffect(() => {
+    if (!draft.location || selectedProvinceCode || provinces.length === 0) {
+      return;
+    }
+
+    const matchedProvince = provinces.find((province) => draft.location.includes(province.name));
+    if (matchedProvince) {
+      setSelectedProvinceCode(matchedProvince.province_code);
+    }
+  }, [draft.location, provinces, selectedProvinceCode]);
+
+  useEffect(() => {
+    if (!draft.location || selectedWardCode || wards.length === 0) {
+      return;
+    }
+
+    const matchedWard = wards.find((ward) => draft.location.includes(ward.ward_name));
+    if (matchedWard) {
+      setSelectedWardCode(matchedWard.ward_code);
+    }
+  }, [draft.location, selectedWardCode, wards]);
+
   const formatPlanLabel = (plan: string) => {
     if (plan === "platinum") return "Platinum";
     if (plan === "gold") return "Gold";
@@ -244,6 +365,118 @@ export default function Profile() {
     setDraft(profile);
     setIsEditing(false);
     setNewInterest("");
+  };
+
+  const formatLocation = (provinceName?: string, wardName?: string) => {
+    if (!provinceName && !wardName) return "";
+    if (provinceName && wardName) return `${wardName}, ${provinceName}`;
+    return provinceName || wardName || "";
+  };
+
+  const handleProvinceChange = (value: string) => {
+    const province = provinces.find((item) => item.province_code === value);
+    setSelectedProvinceCode(value);
+    setSelectedWardCode("");
+    setDraft((prev) => ({
+      ...prev,
+      location: formatLocation(province?.name),
+    }));
+  };
+
+  const handleWardChange = (value: string) => {
+    const ward = wards.find((item) => item.ward_code === value);
+    setSelectedWardCode(value);
+    setDraft((prev) => ({
+      ...prev,
+      location: formatLocation(selectedProvince?.name, ward?.ward_name),
+    }));
+  };
+
+  const reverseGeocode = async (lat: number, lng: number) => {
+    try {
+      const response = await fetch(
+        `https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${lat}&lon=${lng}`
+      );
+      if (!response.ok) {
+        return "";
+      }
+      const data = (await response.json().catch(() => null)) as
+        | {
+            display_name?: string;
+            address?: {
+              suburb?: string;
+              neighbourhood?: string;
+              quarter?: string;
+              city_district?: string;
+              city?: string;
+              town?: string;
+              village?: string;
+              county?: string;
+              state?: string;
+              region?: string;
+            };
+          }
+        | null;
+      if (!data?.address) {
+        return data?.display_name || "";
+      }
+
+      const wardName =
+        data.address.suburb ||
+        data.address.neighbourhood ||
+        data.address.quarter ||
+        data.address.city_district ||
+        "";
+      const provinceName =
+        data.address.state ||
+        data.address.city ||
+        data.address.town ||
+        data.address.village ||
+        data.address.region ||
+        data.address.county ||
+        "";
+
+      return formatLocation(provinceName, wardName) || data.display_name || "";
+    } catch {
+      return "";
+    }
+  };
+
+  const handleUseCurrentLocation = () => {
+    if (!navigator.geolocation) {
+      setLocationError("Geolocation is not supported on this device.");
+      return;
+    }
+
+    setIsLocating(true);
+    setLocationError("");
+
+    navigator.geolocation.getCurrentPosition(
+      async (position) => {
+        const { latitude, longitude } = position.coords;
+        setCoordinates({ lat: latitude, lng: longitude });
+        const resolvedLocation = await reverseGeocode(latitude, longitude);
+        const fallbackLocation = `${latitude.toFixed(5)}, ${longitude.toFixed(5)}`;
+        setDraft((prev) => ({
+          ...prev,
+          location: resolvedLocation || fallbackLocation,
+        }));
+        setIsLocating(false);
+      },
+      (error) => {
+        if (error.code === error.PERMISSION_DENIED) {
+          setLocationError("Location permission denied.");
+        } else if (error.code === error.POSITION_UNAVAILABLE) {
+          setLocationError("Location information is unavailable.");
+        } else if (error.code === error.TIMEOUT) {
+          setLocationError("Location request timed out.");
+        } else {
+          setLocationError("Unable to retrieve your location.");
+        }
+        setIsLocating(false);
+      },
+      { enableHighAccuracy: true, timeout: 15000, maximumAge: 60000 }
+    );
   };
 
   const openPhotoPicker = () => {
@@ -525,7 +758,7 @@ export default function Profile() {
                   </div>
                 ) : (
                   <h1 className="font-serif text-2xl font-bold text-foreground flex items-center gap-2">
-                    <UserButton />
+                    
                     <span>
                       {profile.name}
                       {profile.age !== null ? `, ${profile.age}` : ""}
@@ -539,16 +772,75 @@ export default function Profile() {
               <div className="flex items-center justify-center gap-1 text-muted-foreground mt-1">
                 <MapPin className="w-4 h-4" />
                 {isEditing ? (
-                  <Input
-                    value={draft.location}
-                    onChange={(e) => setDraft((prev) => ({ ...prev, location: e.target.value }))}
-                    placeholder="Thanh pho"
-                    className="h-8"
-                  />
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Select
+                      value={selectedProvinceCode}
+                      onValueChange={handleProvinceChange}
+                    >
+                      <SelectTrigger className="h-8 w-[190px]">
+                        <SelectValue
+                          placeholder={
+                            isLoadingProvinces ? "Loading provinces..." : "Select province"
+                          }
+                        />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {provinces.map((province) => (
+                          <SelectItem
+                            key={province.province_code}
+                            value={province.province_code}
+                          >
+                            {province.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <Select
+                      value={selectedWardCode}
+                      onValueChange={handleWardChange}
+                      disabled={!selectedProvinceCode || isLoadingWards}
+                    >
+                      <SelectTrigger className="h-8 w-[190px]">
+                        <SelectValue
+                          placeholder={
+                            !selectedProvinceCode
+                              ? "Select ward"
+                              : isLoadingWards
+                              ? "Loading wards..."
+                              : "Select ward"
+                          }
+                        />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {wards.map((ward) => (
+                          <SelectItem key={ward.ward_code} value={ward.ward_code}>
+                            {ward.ward_name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={handleUseCurrentLocation}
+                      disabled={isLocating}
+                    >
+                      {isLocating ? "Locating..." : "Use current location"}
+                    </Button>
+                  </div>
                 ) : (
-                  <span>{profile.location || "Chua cap nhat vi tri"}</span>
+                  <span>{profile.location || "Location not set"}</span>
                 )}
               </div>
+              {isEditing && locationError && (
+                <p className="text-xs text-destructive mt-2">{locationError}</p>
+              )}
+              {isEditing && coordinates && !locationError && (
+                <p className="text-xs text-muted-foreground mt-2">
+                  Coordinates: {coordinates.lat.toFixed(5)}, {coordinates.lng.toFixed(5)}
+                </p>
+              )}
               {!isEditing && (
                 <div className="text-sm text-muted-foreground mt-1 space-y-1">
                   <p>{profile.gender || "Chua cap nhat gioi tinh"}</p>

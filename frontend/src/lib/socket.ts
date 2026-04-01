@@ -1,6 +1,9 @@
-import { io, Socket } from 'socket.io-client';
+import { io, Socket } from "socket.io-client";
 
-const SOCKET_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000';
+const SOCKET_URL =
+  import.meta.env.VITE_SOCKET_URL ||
+  import.meta.env.VITE_API_URL ||
+  "http://localhost:3000";
 
 let socket: Socket | null = null;
 
@@ -13,17 +16,17 @@ export const initializeSocket = (token: string): Socket => {
       reconnectionAttempts: 5,
     });
 
-    socket.on('connect', () => {
-      console.log('[Socket] Connected with id:', socket?.id);
+    socket.on("connect", () => {
+      console.log("[Socket] Connected with id:", socket?.id);
     });
 
-    socket.on('connect_error', (error) => {
-      console.error('[Socket] Connection error:', error.message);
+    socket.on("connect_error", (error) => {
+      console.error("[Socket] Connection error:", error.message);
     });
 
-    socket.on('disconnect', (reason) => {
-      console.log('[Socket] Disconnected:', reason);
-    })
+    socket.on("disconnect", (reason) => {
+      console.log("[Socket] Disconnected:", reason);
+    });
   }
   return socket;
 };
