@@ -1,3 +1,1 @@
-export const healthCheck = (req, res) => {
-    res.status(200).json({ messsage: 'OK' });
-};
+export const healthCheck = () => ({ messsage: 'OK' });
