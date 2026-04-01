@@ -15,26 +15,66 @@ export const resolveAuthContext = (req) => {
     }
 };
 
-export const requireAdmin = async (req, res, next) => {
+const resolveClerkIdFromRequest = (req, auth) => {
+    const fallbackClerkId = ENV.NODE_ENV === 'production'
+        ? undefined
+        : req.body?.clerkId || req.query?.clerkId;
+    return auth?.userId || fallbackClerkId;
+};
+
+const resolveActiveUserByClerkId = async (clerkId) => {
+    const user = await User.findOne({ clerkId });
+    if (!user) {
+        return { error: { status: 404, message: 'User not found' } };
+    }
+
+    const activeBan = await isUserActivelyBanned(user._id);
+    if (activeBan) {
+        return { error: { status: 403, message: 'Forbidden: Account is banned' } };
+    }
+
+    return { user };
+};
+
+export const requireActiveUser = async (req, res, next) => {
     try {
         const auth = resolveAuthContext(req);
         // Allow fallback primarily for dev testing
-        const fallbackClerkId = ENV.NODE_ENV === 'production' ? undefined : req.body?.clerkId || req.query?.clerkId;
-        const clerkId = auth?.userId || fallbackClerkId;
+        const clerkId = resolveClerkIdFromRequest(req, auth);
 
         if (!clerkId) {
             return res.status(401).json({ message: 'Unauthorized: No valid session' });
         }
 
-        const user = await User.findOne({ clerkId });
-        if (!user) {
-            return res.status(404).json({ message: 'User not found' });
+        const result = await resolveActiveUserByClerkId(clerkId);
+        if (result.error) {
+            return res.status(result.error.status).json({ message: result.error.message });
         }
 
-        const activeBan = await isUserActivelyBanned(user._id);
-        if (activeBan) {
-            return res.status(403).json({ message: 'Forbidden: Account is banned' });
+        req.user = result.user;
+        next();
+    } catch (error) {
+        console.error('requireActiveUser error:', error);
+        res.status(500).json({ message: 'Server error checking user account status' });
+    }
+};
+
+export const requireAdmin = async (req, res, next) => {
+    try {
+        const auth = resolveAuthContext(req);
+        // Allow fallback primarily for dev testing
+        const clerkId = resolveClerkIdFromRequest(req, auth);
+
+        if (!clerkId) {
+            return res.status(401).json({ message: 'Unauthorized: No valid session' });
         }
+
+        const result = await resolveActiveUserByClerkId(clerkId);
+        if (result.error) {
+            return res.status(result.error.status).json({ message: result.error.message });
+        }
+
+        const user = result.user;
 
         if (user.role !== 'admin') {
             return res.status(403).json({ message: 'Forbidden: Requires admin role' });
