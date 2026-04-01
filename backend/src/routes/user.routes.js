@@ -2,6 +2,7 @@ import { Router } from 'express';
 import multer from 'multer';
 import { ENV } from '../config/env.js';
 import { getMyProfile, onboardUser, updateMyProfile, uploadUserPhotos, getDiscoverUsers, handleUserAction, getConnections } from '../controllers/user.controller.js';
+import { submitReview } from '../controllers/review.controller.js';
 
 const router = Router();
 const upload = multer({
@@ -125,5 +126,7 @@ router.get('/connections', async (req, res) => {
 		return sendError(res, error, 'Server error');
 	}
 });
+
+router.post('/review', submitReview);
 
 export default router;

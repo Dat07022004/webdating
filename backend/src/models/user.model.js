@@ -82,6 +82,8 @@ const userSchema = new mongoose.Schema({
         likesGiven: { type: Number, default: 0 },
         likesReceived: { type: Number, default: 0 },
         profileViews: { type: Number, default: 0 },
+        reputationScore: { type: Number, default: 100 },
+        photoAccuracy: { type: Number, default: 100 }, // Percentage 0-100
         activeHours: [Number],
         recentActions: [{
             actionType: {
