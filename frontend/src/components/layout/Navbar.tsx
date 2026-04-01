@@ -30,13 +30,14 @@ export const Navbar = ({ isAuthenticated = false }: NavbarProps) => {
   const [scrolled, setScrolled] = useState(false);
   const location = useLocation();
   const { getToken } = useAuth();
+  const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000';
 
   const { data: userProfile } = useQuery({
     queryKey: ["userProfileNav"],
     queryFn: async () => {
       if (!isAuthenticated) return null;
       const token = await getToken();
-      const res = await fetch("/api/users/me", {
+      const res = await fetch(`${API_URL}/api/users/me`, {
         headers: { Authorization: `Bearer ${token}` },
       });
       if (!res.ok) return null;
@@ -49,10 +50,22 @@ export const Navbar = ({ isAuthenticated = false }: NavbarProps) => {
 
   const isAdmin = userProfile?.role === "admin";
 
+  const { data: unreadCounts } = useQuery({
+    queryKey: ["unread-counts"],
+    queryFn: async () => {
+      const token = await getToken();
+      const res = await fetch(`${API_URL}/api/notifications/unread-counts`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      if (!res.ok) return null;
+      return await res.json();
+    },
+    enabled: isAuthenticated,
+    refetchInterval: 60000,
+  });
+
   useEffect(() => {
-    const handleScroll = () => {
-      setScrolled(window.scrollY > 20);
-    };
+    const handleScroll = () => setScrolled(window.scrollY > 20);
     window.addEventListener("scroll", handleScroll);
     return () => window.removeEventListener("scroll", handleScroll);
   }, []);
@@ -61,48 +74,26 @@ export const Navbar = ({ isAuthenticated = false }: NavbarProps) => {
     setIsOpen(false);
   }, [location.pathname]);
 
-  // const navLinks = isAuthenticated
-  //   ? [
-  //     { to: "/discover", label: "Discover", icon: Sparkles },
-  //     { to: "/matches", label: "Matches", icon: Heart },
-  //     { to: "/messages", label: "Chat", icon: MessageCircle, badge: 3 },
-  //     { to: "/date-spots", label: "Date Spots", icon: MapPin },
-  //     { to: "/appointments", label: "Dates", icon: CalendarDays },
-  //     { to: "/notifications", label: "Activity", icon: Bell, badge: 5 },
-  //     { to: "/premium", label: "Premium", icon: Crown },
-  //     { to: "/profile", label: "Profile", icon: User },
-  //     ...(isAdmin ? [{ to: "/admin", label: "Admin", icon: Shield }] : []),
-  //   ]
-  //   : [];
-
   const navLinks = useMemo(() => {
     if (!isAuthenticated) return [];
 
     const links = [
       { to: "/discover", label: "Discover", icon: Sparkles },
       { to: "/matches", label: "Matches", icon: Heart },
-      { to: "/messages", label: "Chat", icon: MessageCircle, badge: 3 },
+      { to: "/messages", label: "Chat", icon: MessageCircle, badge: unreadCounts?.messageCount },
       { to: "/date-spots", label: "Date Spots", icon: MapPin },
       { to: "/appointments", label: "Dates", icon: CalendarDays },
+      { to: "/notifications", label: "Activity", icon: Bell, badge: unreadCounts?.notificationCount },
+      { to: "/premium", label: "Premium", icon: Crown },
+      { to: "/profile", label: "Profile", icon: User },
     ];
 
-    if (!isAdmin) {
-      links.push({
-        to: "/notifications",
-        label: "Activity",
-        icon: Bell,
-        badge: 5,
-      });
-      links.push({ to: "/premium", label: "Premium", icon: Crown });
-      links.push({ to: "/profile", label: "Profile", icon: User });
-    }
     if (isAdmin) {
       links.push({ to: "/admin", label: "Admin", icon: Shield });
-      links.push({ to: "/profile", label: "Profile", icon: User });
     }
 
     return links;
-  }, [isAuthenticated, isAdmin]); // Theo dõi cả 2 biến này
+  }, [isAuthenticated, isAdmin, unreadCounts]);
 
   return (
     <nav className="sticky top-2 sm:top-3 z-50 px-3 sm:px-4 lg:px-6 py-2">
@@ -115,9 +106,7 @@ export const Navbar = ({ isAuthenticated = false }: NavbarProps) => {
         <div
           className={cn(
             "flex items-center gap-3 transition-all duration-300",
-            scrolled
-              ? "h-14 px-3 sm:px-4 lg:px-5"
-              : "h-16 px-3 sm:px-5 lg:px-6",
+            scrolled ? "h-14 px-3 sm:px-4 lg:px-5" : "h-16 px-3 sm:px-5 lg:px-6",
           )}
         >
           {/* Logo */}
@@ -135,52 +124,32 @@ export const Navbar = ({ isAuthenticated = false }: NavbarProps) => {
 
           {/* Desktop Navigation */}
           {isAuthenticated && (
-            <div className="hidden md:flex flex-1 min-w-0">
-              <div className="w-full rounded-[1.15rem] border border-slate-100 bg-slate-50/70 p-1 overflow-x-auto [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
-                <div className="inline-flex min-w-full justify-start xl:justify-center items-center gap-1">
-                  {navLinks.map((link) => {
-                    const isActive = location.pathname === link.to;
-                    return (
-                      <Link key={link.to} to={link.to}>
-                        <Button
-                          variant="ghost"
-                          className={cn(
-                            "relative h-10 rounded-full px-2.5 lg:px-3 xl:px-4 font-semibold transition-all duration-300",
-                            isActive
-                              ? "text-[#FF4D8D]"
-                              : "text-slate-500 hover:text-slate-800 hover:bg-slate-100/70",
-                          )}
-                        >
-                          {isActive && (
-                            <motion.span
-                              layoutId="navbar-active-pill"
-                              className="absolute inset-0 rounded-full bg-white shadow-[0_2px_10px_rgba(15,23,42,0.08)]"
-                              transition={{
-                                type: "spring",
-                                stiffness: 380,
-                                damping: 30,
-                              }}
-                            />
-                          )}
-                          <link.icon
-                            className={cn(
-                              "relative w-4 h-4 lg:mr-2",
-                              isActive && "fill-[#FF4D8D]/20",
-                            )}
-                          />
-                          <span className="relative hidden lg:inline whitespace-nowrap">
-                            {link.label}
-                          </span>
-                          {link.badge && (
-                            <Badge className="absolute -top-1 -right-1 h-5 min-w-5 px-1 flex items-center justify-center bg-gradient-to-r from-[#FF4D8D] to-[#FF8E53] text-[10px] text-white font-black border-2 border-white rounded-full">
-                              {link.badge}
-                            </Badge>
-                          )}
-                        </Button>
-                      </Link>
-                    );
-                  })}
-                </div>
+            <div className="hidden md:flex flex-1 min-w-0 justify-center">
+              <div className="rounded-full bg-slate-50/50 p-1 border border-slate-100 flex items-center gap-1">
+                {navLinks.map((link) => {
+                  const isActive = location.pathname === link.to;
+                  return (
+                    <Link key={link.to} to={link.to}>
+                      <Button
+                        variant="ghost"
+                        className={cn(
+                          "relative rounded-full px-4 h-10 font-bold transition-all duration-300 whitespace-nowrap",
+                          isActive 
+                            ? "bg-white text-[#FF4D8D] shadow-sm hover:text-[#FF4D8D]" 
+                            : "text-slate-500 hover:text-slate-800 hover:bg-slate-100/50"
+                        )}
+                      >
+                        <link.icon className={cn("w-4 h-4 mr-2", isActive && "fill-[#FF4D8D]/20")} />
+                        <span className="hidden xl:inline">{link.label}</span>
+                        {link.badge !== undefined && link.badge > 0 && (
+                          <Badge className="absolute -top-1 -right-1 h-5 min-w-5 px-1 flex items-center justify-center bg-gradient-to-r from-[#FF4D8D] to-[#FF8E53] text-[10px] text-white font-black border-2 border-white rounded-full">
+                            {link.badge}
+                          </Badge>
+                        )}
+                      </Button>
+                    </Link>
+                  );
+                })}
               </div>
             </div>
           )}
@@ -260,7 +229,7 @@ export const Navbar = ({ isAuthenticated = false }: NavbarProps) => {
                           />
                         </div>
                         {link.label}
-                        {link.badge && (
+                        {link.badge !== undefined && link.badge > 0 && (
                           <Badge className="ml-auto bg-[#FF4D8D] shadow-[0_0_10px_rgba(255,77,141,0.5)] text-white border-0 rounded-full px-2">
                             {link.badge} new
                           </Badge>

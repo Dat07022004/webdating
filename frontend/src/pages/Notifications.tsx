@@ -1,61 +1,35 @@
 import { motion } from "framer-motion";
-import { Bell, Heart, MessageCircle, Calendar, Star, UserCheck, Settings } from "lucide-react";
+import { Bell, Heart, MessageCircle, Calendar, Star, UserCheck, Settings, CheckCheck } from "lucide-react";
 import { Layout } from "@/components/layout/Layout";
 import { Button } from "@/components/ui/button";
+import { useNavigate } from "react-router-dom";
 import { cn } from "@/lib/utils";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useAuth } from "@clerk/clerk-react";
+import { formatDistanceToNow } from "date-fns";
+import { vi } from "date-fns/locale";
 
-const mockNotifications = [
-  {
-    id: "1",
-    type: "match",
-    icon: Heart,
-    title: "New Match!",
-    message: "You and Emma matched! Start the conversation now.",
-    time: "2 min ago",
-    read: false,
-    image: "https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=80&h=80&fit=crop",
-  },
-  {
-    id: "2",
-    type: "message",
-    icon: MessageCircle,
-    title: "New Message",
-    message: "Sophia sent you a message: \"Hey! How's your day going?\"",
-    time: "15 min ago",
-    read: false,
-    image: "https://images.unsplash.com/photo-1524504388940-b1c1722653e1?w=80&h=80&fit=crop",
-  },
-  {
-    id: "3",
-    type: "like",
-    icon: Star,
-    title: "Someone Likes You!",
-    message: "Someone new liked your profile. Upgrade to see who!",
-    time: "1 hour ago",
-    read: true,
-    image: null,
-  },
-  {
-    id: "4",
-    type: "appointment",
-    icon: Calendar,
-    title: "Date Reminder",
-    message: "You have a date with Olivia tomorrow at 7 PM.",
-    time: "3 hours ago",
-    read: true,
-    image: "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=80&h=80&fit=crop",
-  },
-  {
-    id: "5",
-    type: "verification",
-    icon: UserCheck,
-    title: "Profile Verified!",
-    message: "Your email has been verified. Your profile now shows a verified badge.",
-    time: "1 day ago",
-    read: true,
-    image: null,
-  },
-];
+interface NotificationData {
+  _id: string;
+  type: "match" | "message" | "like" | "appointment" | "verification" | "system";
+  title: string;
+  message: string;
+  createdAt: string;
+  read: boolean;
+  image?: string;
+  metadata?: any;
+}
+
+const getIcon = (type: string) => {
+  switch (type) {
+    case "match": return Heart;
+    case "message": return MessageCircle;
+    case "like": return Star;
+    case "appointment": return Calendar;
+    case "verification": return UserCheck;
+    default: return Bell;
+  }
+};
 
 const getIconColor = (type: string) => {
   switch (type) {
@@ -75,7 +49,78 @@ const getIconColor = (type: string) => {
 };
 
 export default function Notifications() {
-  const unreadCount = mockNotifications.filter((n) => !n.read).length;
+  const { getToken } = useAuth();
+  const navigate = useNavigate();
+  const queryClient = useQueryClient();
+  const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000';
+
+  const { data, isLoading } = useQuery({
+    queryKey: ["notifications"],
+    queryFn: async () => {
+      const token = await getToken();
+      const res = await fetch(`${API_URL}/api/notifications`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      const json = await res.json();
+      return json.notifications as NotificationData[];
+    }
+  });
+
+  const markReadMutation = useMutation({
+    mutationFn: async (id: string) => {
+      const token = await getToken();
+      await fetch(`${API_URL}/api/notifications/${id}/read`, {
+        method: "PATCH",
+        headers: { Authorization: `Bearer ${token}` }
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["notifications"] });
+      queryClient.invalidateQueries({ queryKey: ["unread-counts"] });
+    }
+  });
+
+  const markAllReadMutation = useMutation({
+    mutationFn: async () => {
+      const token = await getToken();
+      await fetch(`${API_URL}/api/notifications/read-all`, {
+        method: "PATCH",
+        headers: { Authorization: `Bearer ${token}` }
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["notifications"] });
+      queryClient.invalidateQueries({ queryKey: ["unread-counts"] });
+    }
+  });
+
+  const handleNotificationClick = (notification: NotificationData) => {
+    // 1. Mark as read if not already
+    if (!notification.read) {
+      markReadMutation.mutate(notification._id);
+    }
+
+    // 2. Navigate based on type
+    switch (notification.type) {
+      case "match":
+        navigate("/matches");
+        break;
+      case "message":
+        navigate("/messages");
+        break;
+      case "like":
+        navigate("/notifications");
+        break;
+      case "appointment":
+        navigate("/appointments");
+        break;
+      default:
+        break;
+    }
+  };
+
+  const notifications = data || [];
+  const unreadCount = notifications.filter((n) => !n.read).length;
 
   return (
     <Layout isAuthenticated>
@@ -86,37 +131,53 @@ export default function Notifications() {
             <div>
               <h1 className="font-serif text-3xl font-bold text-foreground flex items-center gap-2">
                 <Bell className="w-8 h-8 text-primary" />
-                Notifications
+                Thông báo
               </h1>
               <p className="text-muted-foreground mt-1">
-                {unreadCount > 0 ? `${unreadCount} new notifications` : "You're all caught up!"}
+                {unreadCount > 0 ? `Bạn có ${unreadCount} thông báo mới` : "Bạn đã xem hết thông báo!"}
               </p>
             </div>
-            <Button variant="ghost" size="icon">
-              <Settings className="w-5 h-5" />
-            </Button>
+            <div className="flex gap-2">
+              {unreadCount > 0 && (
+                <Button 
+                  variant="ghost" 
+                  size="sm" 
+                  className="text-primary hover:text-primary/80"
+                  onClick={() => markAllReadMutation.mutate()}
+                >
+                  <CheckCheck className="w-4 h-4 mr-2" />
+                  Đánh dấu hết đã đọc
+                </Button>
+              )}
+              <Button variant="ghost" size="icon">
+                <Settings className="w-5 h-5" />
+              </Button>
+            </div>
           </div>
 
           {/* Notifications List */}
           <div className="space-y-3">
-            {mockNotifications.map((notification, i) => {
-              const Icon = notification.icon;
+            {isLoading ? (
+              <div className="text-center py-10 text-muted-foreground">Đang tải thông báo...</div>
+            ) : notifications.map((notification, i) => {
+              const Icon = getIcon(notification.type);
               return (
                 <motion.div
-                  key={notification.id}
+                  key={notification._id}
                   initial={{ opacity: 0, y: 20 }}
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ delay: i * 0.05 }}
+                  onClick={() => handleNotificationClick(notification)}
                   className={cn(
-                    "p-4 rounded-2xl flex items-start gap-4 cursor-pointer transition-colors",
+                    "p-4 rounded-2xl flex items-start gap-4 cursor-pointer transition-colors border border-transparent",
                     notification.read
                       ? "bg-card hover:bg-secondary/50"
-                      : "bg-coral-light/30 hover:bg-coral-light/50"
+                      : "bg-coral-light/20 hover:bg-coral-light/30 border-coral-light/30"
                   )}
                 >
                   {/* Icon or Image */}
                   {notification.image ? (
-                    <div className="relative">
+                    <div className="relative flex-shrink-0">
                       <img
                         src={notification.image}
                         alt=""
@@ -134,7 +195,7 @@ export default function Notifications() {
                   ) : (
                     <div
                       className={cn(
-                        "w-12 h-12 rounded-full flex items-center justify-center",
+                        "w-12 h-12 rounded-full flex items-center justify-center flex-shrink-0",
                         getIconColor(notification.type)
                       )}
                     >
@@ -145,9 +206,11 @@ export default function Notifications() {
                   {/* Content */}
                   <div className="flex-1 min-w-0">
                     <div className="flex items-start justify-between gap-2">
-                      <h3 className="font-medium text-foreground">{notification.title}</h3>
-                      <span className="text-xs text-muted-foreground whitespace-nowrap">
-                        {notification.time}
+                      <h3 className={cn("text-sm font-medium", !notification.read ? "text-foreground font-bold" : "text-foreground/80")}>
+                        {notification.title}
+                      </h3>
+                      <span className="text-[10px] text-muted-foreground whitespace-nowrap">
+                        {formatDistanceToNow(new Date(notification.createdAt), { addSuffix: true, locale: vi })}
                       </span>
                     </div>
                     <p className="text-sm text-muted-foreground mt-1 line-clamp-2">
@@ -157,7 +220,7 @@ export default function Notifications() {
 
                   {/* Unread Indicator */}
                   {!notification.read && (
-                    <div className="w-2 h-2 rounded-full gradient-primary mt-2" />
+                    <div className="w-2 h-2 rounded-full bg-primary mt-2" />
                   )}
                 </motion.div>
               );
@@ -165,16 +228,16 @@ export default function Notifications() {
           </div>
 
           {/* Empty State */}
-          {mockNotifications.length === 0 && (
+          {!isLoading && notifications.length === 0 && (
             <div className="text-center py-16">
               <div className="w-20 h-20 rounded-full bg-secondary flex items-center justify-center mx-auto mb-4">
                 <Bell className="w-10 h-10 text-muted-foreground" />
               </div>
               <h3 className="font-serif text-xl font-semibold text-foreground mb-2">
-                No notifications yet
+                Chưa có thông báo nào
               </h3>
               <p className="text-muted-foreground">
-                When you get matches, messages, or likes, they'll appear here.
+                Khi bạn có tương hợp, tin nhắn hoặc lượt thích mới, chúng sẽ xuất hiện ở đây.
               </p>
             </div>
           )}

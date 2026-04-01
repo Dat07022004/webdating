@@ -77,3 +77,22 @@ export const createConversation = async ({ clerkId, targetUserId }) => {
 
   return { conversation };
 };
+
+export const markConversationAsSeen = async ({ clerkId, conversationId }) => {
+    if (!clerkId) {
+      throw createError(401, 'Unauthorized');
+    }
+  
+    const user = await User.findOne({ clerkId }).select('_id');
+    if (!user) {
+      throw createError(404, 'User not found');
+    }
+  
+    // Cập nhật tất cả tin nhắn mà mình là người nhận trong conversation này thành đã xem
+    await Message.updateMany(
+      { conversationId, receiverId: user._id, seen: false },
+      { $set: { seen: true, seenAt: new Date() } }
+    );
+  
+    return { success: true, message: 'Conversation marked as seen' };
+};
