@@ -1,5 +1,6 @@
 import { User } from '../models/user.model.js';
 import { ENV } from '../config/env.js';
+import { isUserActivelyBanned } from '../services/admin.service.js';
 
 export const resolveAuthContext = (req) => {
     try {
@@ -28,6 +29,11 @@ export const requireAdmin = async (req, res, next) => {
         const user = await User.findOne({ clerkId });
         if (!user) {
             return res.status(404).json({ message: 'User not found' });
+        }
+
+        const activeBan = await isUserActivelyBanned(user._id);
+        if (activeBan) {
+            return res.status(403).json({ message: 'Forbidden: Account is banned' });
         }
 
         if (user.role !== 'admin') {
