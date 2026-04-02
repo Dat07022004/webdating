@@ -6,6 +6,14 @@ jest.unstable_mockModule("../config/db.js", () => ({
 
 jest.unstable_mockModule("@clerk/express", () => ({
   clerkMiddleware: () => (req, res, next) => next(),
+  requireAuth: () => (req, res, next) => next(),
+  verifyToken: async () => ({ sub: "user_123" }),
+  createClerkClient: () => ({
+    users: {
+      getUser: async () => ({ id: "user_123" }),
+      deleteUser: async () => ({}),
+    },
+  }),
 }));
 
 const { default: app } = await import("../server.js");

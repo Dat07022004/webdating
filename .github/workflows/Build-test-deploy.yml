@@ -1,0 +1,152 @@
+name: Web Dating CI/CD
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+    branches: ["main"]
+  workflow_dispatch:
+
+env:
+  NODE_VERSION: "20"
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: web-dating-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: "npm"
+          cache-dependency-path: |
+            backend/package-lock.json
+            frontend/package-lock.json
+
+      - name: Backend - Install & Build
+        run: |
+          cd backend
+          npm ci
+          npm run build --if-present
+
+      - name: Frontend - Install & Build
+        env:
+          VITE_CLERK_PUBLISHABLE_KEY: ${{ secrets.FRONTEND_VITE_CLERK_PUBLISHABLE_KEY }}
+          VITE_API_URL: ${{ secrets.FRONTEND_VITE_API_URL }}
+          VITE_SOCKET_URL: ${{ secrets.FRONTEND_VITE_SOCKET_URL }}
+        run: |
+          cd frontend
+          npm ci
+          npm run build
+
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    needs: build
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: "npm"
+          cache-dependency-path: |
+            backend/package-lock.json
+            frontend/package-lock.json
+
+      - name: Backend - Install & Test
+        env:
+          NODE_ENV: test
+          PORT: 3000
+          DATABASE_URL: mongodb://localhost:27017/webdating-test
+          CLERK_PUBLISHABLE_KEY: pk_test_mock
+          CLERK_SECRET_KEY: sk_test_mock
+          INNGEST_SIGNING_KEY: sk_test_mock
+          CLOUDINARY_API_KEY: test
+          CLOUDINARY_API_SECRET: test
+          CLOUDINARY_CLOUD_NAME: test
+          MOMO_PARTNER_CODE: test
+          MOMO_ACCESS_KEY: test
+          MOMO_SECRET_KEY: test
+        run: |
+          cd backend
+          npm ci
+          npm run test:coverage
+
+      - name: Frontend - Install & Test
+        env:
+          NODE_ENV: test
+          VITE_CLERK_PUBLISHABLE_KEY: pk_test_mock
+          VITE_API_URL: http://127.0.0.1:3000
+          VITE_SOCKET_URL: http://127.0.0.1:3000
+        run: |
+          cd frontend
+          npm ci
+          npm run test:coverage
+
+      - name: Upload Coverage Report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: full-coverage-report
+          path: |
+            backend/coverage/
+            frontend/coverage/
+          retention-days: 7
+
+  deploy:
+    name: Deploy
+    runs-on: ubuntu-latest
+    needs: test
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and Push Backend Image
+        uses: docker/build-push-action@v6
+        with:
+          context: ./backend
+          file: ./backend/Dockerfile
+          push: true
+          tags: |
+            ghcr.io/${{ github.repository_owner }}/webdating-backend:latest
+            ghcr.io/${{ github.repository_owner }}/webdating-backend:${{ github.sha }}
+
+      - name: Build and Push Frontend Image
+        uses: docker/build-push-action@v6
+        with:
+          context: ./frontend
+          file: ./frontend/Dockerfile
+          push: true
+          build-args: |
+            VITE_CLERK_PUBLISHABLE_KEY=${{ secrets.FRONTEND_VITE_CLERK_PUBLISHABLE_KEY }}
+            VITE_API_URL=${{ secrets.FRONTEND_VITE_API_URL }}
+            VITE_SOCKET_URL=${{ secrets.FRONTEND_VITE_SOCKET_URL }}
+          tags: |
+            ghcr.io/${{ github.repository_owner }}/webdating-frontend:latest
+            ghcr.io/${{ github.repository_owner }}/webdating-frontend:${{ github.sha }}
