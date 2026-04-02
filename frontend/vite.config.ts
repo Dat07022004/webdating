@@ -18,7 +18,7 @@ export default defineConfig({
       provider: "v8",
       include: ["src/**/*.{ts,tsx}"],
       exclude: ["src/main.tsx", "src/vite-env.d.ts", "src/test/**"],
-      reporter: ["text", "json", "html"],
+      reporter: ["text", "json", "html", "lcov"],
       reportsDirectory: "./coverage",
     },
   },
