@@ -10,6 +10,7 @@ import chatRoutes from "./routes/chat.routes.js";
 import uploadRoutes from "./routes/upload.routes.js";
 import premiumRoutes from "./routes/premium.routes.js";
 import adminRoutes from "./routes/admin.route.js";
+import revenueRoutes from "./routes/revenue.routes.js";
 import { requireActiveUser } from "./middleware/auth.middleware.js";
 
 import { functions, inngest } from "./config/inngest.js";
@@ -38,6 +39,7 @@ app.use("/api/chat", requireActiveUser, chatRoutes);
 app.use("/api/upload", requireActiveUser, uploadRoutes);
 app.use("/api/premium", requireActiveUser, premiumRoutes);
 app.use("/api/admin", adminRoutes);
+app.use("/api/revenue", revenueRoutes);
 app.use("/api", healthRoutes);
 
 import fs from 'fs';

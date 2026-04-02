@@ -87,3 +87,32 @@ export const requireAdmin = async (req, res, next) => {
         res.status(500).json({ message: 'Server error checking admin role' });
     }
 };
+
+export const requireManagerOrAdmin = async (req, res, next) => {
+    try {
+        const auth = resolveAuthContext(req);
+        // Allow fallback primarily for dev testing
+        const clerkId = resolveClerkIdFromRequest(req, auth);
+
+        if (!clerkId) {
+            return res.status(401).json({ message: 'Unauthorized: No valid session' });
+        }
+
+        const result = await resolveActiveUserByClerkId(clerkId);
+        if (result.error) {
+            return res.status(result.error.status).json({ message: result.error.message });
+        }
+
+        const user = result.user;
+
+        if (!['manager', 'admin'].includes(user.role)) {
+            return res.status(403).json({ message: 'Forbidden: Requires manager or admin role' });
+        }
+
+        req.user = user;
+        next();
+    } catch (error) {
+        console.error('requireManagerOrAdmin error:', error);
+        res.status(500).json({ message: 'Server error checking manager role' });
+    }
+};
