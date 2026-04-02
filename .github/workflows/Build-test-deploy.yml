@@ -1,21 +1,22 @@
-name: Web Dating CI - Test & Coverage
+name: Web Dating CI/CD
 
 on:
   push:
-    branches: ["main"]
+    branches: ["**"]
   pull_request:
     branches: ["main"]
   workflow_dispatch:
 
 env:
   NODE_VERSION: "20"
-  FRONTEND_VITE_CLERK_PUBLISHABLE_KEY: pk_test_ZXZpZGVudC1sYW1iLTk1LmNsZXJrLmFjY291bnRzLmRldiQ
-  FRONTEND_VITE_API_URL: https://heartly-dating.sevalla.app
-  FRONTEND_VITE_SOCKET_URL: https://heartly-dating.sevalla.app
 
 permissions:
   contents: read
   packages: write
+
+concurrency:
+  group: web-dating-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   build:
@@ -43,9 +44,9 @@ jobs:
 
       - name: Frontend - Install & Build
         env:
-          VITE_CLERK_PUBLISHABLE_KEY: ${{ env.FRONTEND_VITE_CLERK_PUBLISHABLE_KEY }}
-          VITE_API_URL: ${{ env.FRONTEND_VITE_API_URL }}
-          VITE_SOCKET_URL: ${{ env.FRONTEND_VITE_SOCKET_URL }}
+          VITE_CLERK_PUBLISHABLE_KEY: ${{ secrets.FRONTEND_VITE_CLERK_PUBLISHABLE_KEY }}
+          VITE_API_URL: ${{ secrets.FRONTEND_VITE_API_URL }}
+          VITE_SOCKET_URL: ${{ secrets.FRONTEND_VITE_SOCKET_URL }}
         run: |
           cd frontend
           npm ci
@@ -143,9 +144,9 @@ jobs:
           file: ./frontend/Dockerfile
           push: true
           build-args: |
-            VITE_CLERK_PUBLISHABLE_KEY=${{ env.FRONTEND_VITE_CLERK_PUBLISHABLE_KEY }}
-            VITE_API_URL=${{ env.FRONTEND_VITE_API_URL }}
-            VITE_SOCKET_URL=${{ env.FRONTEND_VITE_SOCKET_URL }}
+            VITE_CLERK_PUBLISHABLE_KEY=${{ secrets.FRONTEND_VITE_CLERK_PUBLISHABLE_KEY }}
+            VITE_API_URL=${{ secrets.FRONTEND_VITE_API_URL }}
+            VITE_SOCKET_URL=${{ secrets.FRONTEND_VITE_SOCKET_URL }}
           tags: |
             ghcr.io/${{ github.repository_owner }}/webdating-frontend:latest
             ghcr.io/${{ github.repository_owner }}/webdating-frontend:${{ github.sha }}

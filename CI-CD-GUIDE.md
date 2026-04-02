@@ -104,12 +104,48 @@ docker run --rm -p 8080:80 webdating-frontend:local
 
 ## 5. GHCR output
 
+GHCR means **GitHub Container Registry**. It is the place where GitHub Actions stores Docker images after the deploy job builds them.
+
 The deploy job pushes these images:
 
 - `ghcr.io/<owner>/webdating-backend:latest`
 - `ghcr.io/<owner>/webdating-backend:<sha>`
 - `ghcr.io/<owner>/webdating-frontend:latest`
 - `ghcr.io/<owner>/webdating-frontend:<sha>`
+
+GHCR does **not** store runtime secrets for your app. The container image is only the package. The real production environment variables are attached later in the platform that runs the container, for example Sevalla.
+
+### Production env placement
+
+- Frontend build-time public values can stay in the workflow because Vite needs them during `npm run build`.
+- Backend runtime secrets should be set in Sevalla's environment settings, not hard-coded in the image.
+- If Sevalla asks for env vars, enter them there as plain values or secrets depending on the platform UI.
+
+### What you likely need to fill
+
+| Variable                     | Example value                                  | GitHub Secrets                        | Sevalla runtime env |
+| ---------------------------- | ---------------------------------------------- | ------------------------------------- | ------------------- |
+| `VITE_CLERK_PUBLISHABLE_KEY` | `pk_live_...` or your existing publishable key | `FRONTEND_VITE_CLERK_PUBLISHABLE_KEY` | No                  |
+| `VITE_API_URL`               | `https://your-backend-domain`                  | `FRONTEND_VITE_API_URL`               | No                  |
+| `VITE_SOCKET_URL`            | `https://your-backend-domain`                  | `FRONTEND_VITE_SOCKET_URL`            | No                  |
+| `CLERK_PUBLISHABLE_KEY`      | production Clerk key                           | No                                    | Yes                 |
+| `CLERK_SECRET_KEY`           | production Clerk secret                        | No                                    | Yes                 |
+| `DATABASE_URL`               | production MongoDB URI                         | No                                    | Yes                 |
+| `INNGEST_SIGNING_KEY`        | production signing key                         | No                                    | Yes                 |
+| `CLOUDINARY_API_KEY`         | production Cloudinary key                      | No                                    | Yes                 |
+| `CLOUDINARY_API_SECRET`      | production Cloudinary secret                   | No                                    | Yes                 |
+| `CLOUDINARY_CLOUD_NAME`      | production cloud name                          | No                                    | Yes                 |
+| `MOMO_PARTNER_CODE`          | production MoMo partner code                   | No                                    | Yes                 |
+| `MOMO_ACCESS_KEY`            | production MoMo access key                     | No                                    | Yes                 |
+| `MOMO_SECRET_KEY`            | production MoMo secret key                     | No                                    | Yes                 |
+
+### GitHub Secrets to create
+
+Add these in GitHub repo settings under `Settings > Secrets and variables > Actions`:
+
+- `FRONTEND_VITE_CLERK_PUBLISHABLE_KEY`
+- `FRONTEND_VITE_API_URL`
+- `FRONTEND_VITE_SOCKET_URL`
 
 ## 6. Checklist for the assignment screenshots
 
@@ -155,5 +191,12 @@ Since the repo is not yet wired to Sevalla deployment directly, the safe baselin
 - Build images in GitHub Actions
 - Push images to GHCR
 - Configure Sevalla to pull the image later
+
+In practice, the deploy flow is:
+
+1. GitHub Actions builds and pushes the image to GHCR.
+2. Sevalla pulls that image.
+3. You paste the production env vars into Sevalla's app settings.
+4. Sevalla restarts the container with those env vars applied.
 
 If Sevalla accepts direct Git/Dockerfile deployment, you can keep this workflow and point Sevalla to the GHCR image instead.
