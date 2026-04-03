@@ -78,11 +78,16 @@ export const getDiscoverUsers = async ({ clerkId }) => {
         ]
     });
 
-    const excludedIds = existingConnections.reduce((acc, curr) => {
-        if (curr.senderId.toString() !== currentUser._id.toString()) acc.push(curr.senderId);
-        if (curr.receiverId.toString() !== currentUser._id.toString()) acc.push(curr.receiverId);
-        return acc;
-    }, [currentUser._id]);
+    const excludedIdSet = new Set([currentUser._id.toString()]);
+    existingConnections.forEach((conn) => {
+        if (conn.senderId) {
+            excludedIdSet.add(conn.senderId.toString());
+        }
+        if (conn.receiverId) {
+            excludedIdSet.add(conn.receiverId.toString());
+        }
+    });
+    const excludedIds = Array.from(excludedIdSet);
 
     const suggestions = await MatchSuggestion.find({ userId: currentUser._id }).populate(
        'candidateUserId',
@@ -90,7 +95,7 @@ export const getDiscoverUsers = async ({ clerkId }) => {
     );
 
     let candidates = suggestions
-        .filter(s => s.candidateUserId && !excludedIds.some(id => id.toString() === s.candidateUserId._id.toString()))
+        .filter(s => s.candidateUserId && !excludedIdSet.has(s.candidateUserId._id.toString()))
         .map(s => s.candidateUserId);
 
     if (candidates.length === 0) {
@@ -261,8 +266,16 @@ export const getConnections = async ({ clerkId }) => {
     const sent = [];
 
     connections.forEach(conn => {
-        const isSender = conn.senderId._id.toString() === currentUser._id.toString();
-        const targetUser = isSender ? conn.receiverId : conn.senderId;
+        const sender = conn.senderId;
+        const receiver = conn.receiverId;
+
+        // Skip orphaned connections where related users are missing to avoid runtime 500s.
+        if (!sender?._id || !receiver?._id) {
+            return;
+        }
+
+        const isSender = sender._id.toString() === currentUser._id.toString();
+        const targetUser = isSender ? receiver : sender;
 
         const mappedUser = {
             id: targetUser?._id?.toString() || 'unknown',

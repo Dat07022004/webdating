@@ -14,6 +14,7 @@ import {
   Zap,
   Crown,
   Shield,
+  BarChart3,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -49,6 +50,7 @@ export const Navbar = ({ isAuthenticated = false }: NavbarProps) => {
   });
 
   const isAdmin = userProfile?.role === "admin";
+  const isManager = userProfile?.role === "manager";
 
   const { data: unreadCounts } = useQuery({
     queryKey: ["unread-counts"],
@@ -88,12 +90,28 @@ export const Navbar = ({ isAuthenticated = false }: NavbarProps) => {
       { to: "/profile", label: "Profile", icon: User },
     ];
 
+    if (!isAdmin && !isManager) {
+      links.push({
+        to: "/notifications",
+        label: "Activity",
+        icon: Bell,
+        badge: 5,
+      });
+      links.push({ to: "/premium", label: "Premium", icon: Crown });
+      links.push({ to: "/profile", label: "Profile", icon: User });
+    }
     if (isAdmin) {
       links.push({ to: "/admin", label: "Admin", icon: Shield });
+      links.push({ to: "/revenue/overview", label: "Revenue", icon: BarChart3 });
+      links.push({ to: "/profile", label: "Profile", icon: User });
+    }
+    if (isManager) {
+      links.push({ to: "/revenue/overview", label: "Revenue", icon: BarChart3 });
+      links.push({ to: "/profile", label: "Profile", icon: User });
     }
 
     return links;
-  }, [isAuthenticated, isAdmin, unreadCounts]);
+  }, [isAuthenticated, isAdmin, isManager]); // Theo dõi cả 2 biến này
 
   return (
     <nav className="sticky top-2 sm:top-3 z-50 px-3 sm:px-4 lg:px-6 py-2">
