@@ -9,6 +9,7 @@ import healthRoutes from "./routes/health.routes.js";
 import chatRoutes from "./routes/chat.routes.js";
 import uploadRoutes from "./routes/upload.routes.js";
 import premiumRoutes from "./routes/premium.routes.js";
+import notificationRoutes from "./routes/notification.routes.js";
 import adminRoutes from "./routes/admin.route.js";
 import revenueRoutes from "./routes/revenue.routes.js";
 import { requireActiveUser } from "./middleware/auth.middleware.js";

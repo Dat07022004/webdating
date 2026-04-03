@@ -1,7 +1,9 @@
+import { Notification } from '../models/notification.model.js';
 import { randomUUID } from "node:crypto";
 import { addUser, getSocketIds } from "./onlineUsers.js";
 import { Message } from "../models/message.model.js";
 import { Conversation } from "../models/conversation.model.js";
+import { User } from "../models/user.model.js";
 
 /**
  * Call session state in-memory.
@@ -123,10 +125,33 @@ export function registerChatHandlers(io, socket) {
       // ta có thể emit trực tiếp vào các socket của receiver đó.
       const receiverSockets = getSocketIds(receiverId);
       if (receiverSockets.length > 0) {
-        // Gửi thông báo 'new_message_alert' tới máy người nhận để tăng unreadCount ở sidebar chẳng hạn
-        receiverSockets.forEach((sockId) => {
-          io.to(sockId).emit("new_message_alert", message);
+        // Lấy tên người gửi để hiện thông báo
+        const sender = await User.findById(userId).select('profile.personalInfo.name username');
+        const senderName = sender?.profile?.personalInfo?.name || sender?.username || 'Ai đó';
+
+        // Gửi thông báo tới máy người nhận
+        receiverSockets.forEach(sockId => {
+          io.to(sockId).emit('new_message_alert', {
+            ...message.toObject(),
+            senderName
+          });
+          io.to(sockId).emit('new_notification', { type: 'message' });
         });
+
+        // Lưu thông báo vào DB để hiện ở trang Notifications
+        try {
+          await Notification.create({
+            userId: receiverId,
+            senderId: userId,
+            type: 'message',
+            title: 'New Message',
+            message: `${senderName} đã gửi cho bạn một tin nhắn.`,
+            image: sender?.profile?.avatarUrl,
+            metadata: { conversationId, messageId: message._id }
+          });
+        } catch (notificationErr) {
+          console.error('[Notification] Message notification failed:', notificationErr.message);
+        }
       }
 
       // Trả lại message cho người gửi (để update UI)

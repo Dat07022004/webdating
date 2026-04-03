@@ -22,6 +22,7 @@ import DateReview from "./pages/DateReview";
 import AdminDashboard from "./pages/AdminDashboard";
 import RevenueDashboard from "./pages/RevenueDashboard";
 import NotFound from "./pages/NotFound";
+import { SocketNotificationListener } from "./components/SocketNotificationListener";
 
 const queryClient = new QueryClient();
 
@@ -38,6 +39,7 @@ const App = () => (
       <Toaster />
       <Sonner />
       <BrowserRouter>
+        <SocketNotificationListener />
         <Routes>
           <Route path="/" element={<Landing />} />
           <Route path="/login" element={<Login />} />
