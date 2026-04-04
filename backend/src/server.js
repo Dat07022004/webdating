@@ -1,5 +1,7 @@
 import express from "express";
 import path from "path";
+import fs from "fs";
+import http from "http";
 import { clerkMiddleware } from "@clerk/express";
 import { ENV } from "./config/env.js";
 import { connectDB } from "./config/db.js";
@@ -13,23 +15,67 @@ import adminRoutes from "./routes/admin.route.js";
 import { requireActiveUser } from "./middleware/auth.middleware.js";
 
 import { functions, inngest } from "./config/inngest.js";
-import http from "http";
 import { initSocket } from "./socket/index.js";
 import cors from "cors";
 
 const app = express();
-app.use(cors({ origin: true, credentials: true })); // IMPORTANT: Required for frontend routing
+const defaultAllowedOrigins = [
+  "https://heartly-webdating-frontend-8h1e1.sevalla.app",
+  "http://localhost:5173",
+  "http://127.0.0.1:5173",
+];
+
+const normalizeOrigin = (origin) => origin?.trim().replace(/\/$/, "");
+
+const allowedOrigins = new Set(
+  [ENV.ALLOWED_ORIGINS, ENV.FRONTEND_URL]
+    .flatMap((value) => {
+      if (!value) return [];
+
+      if (value.trim() === "*") {
+        return ["*"];
+      }
+
+      return value
+        .split(",")
+        .map((item) => normalizeOrigin(item))
+        .filter(Boolean);
+    })
+    .concat(defaultAllowedOrigins.map((origin) => normalizeOrigin(origin))),
+);
+
+const corsOptions = {
+  origin: (origin, callback) => {
+    if (
+      !origin ||
+      allowedOrigins.has("*") ||
+      allowedOrigins.has(normalizeOrigin(origin))
+    ) {
+      callback(null, true);
+      return;
+    }
+
+    callback(null, false);
+  },
+  credentials: true,
+  methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+};
+
+app.use(cors(corsOptions));
+app.options("/{*path}", cors(corsOptions));
 const httpServer = http.createServer(app);
 const io = initSocket(httpServer);
 
 const _dirname = path.resolve();
 
 app.use(express.json());
-app.use(clerkMiddleware({
-  secretKey: ENV.CLERK_SECRET_KEY,
-  publishableKey: ENV.CLERK_PUBLISHABLE_KEY,
-  clockSkewInMs: 60 * 1000 * 5 // 5 minutes leeway
-})); // adds auth access on req via req.auth()
+app.use(
+  clerkMiddleware({
+    secretKey: ENV.CLERK_SECRET_KEY,
+    publishableKey: ENV.CLERK_PUBLISHABLE_KEY,
+    clockSkewInMs: 60 * 1000 * 5, // 5 minutes leeway
+  }),
+); // adds auth access on req via req.auth()
 
 // Inngest requests require parsed JSON body.
 app.use("/api/inngest", serve({ client: inngest, functions }));
@@ -39,8 +85,6 @@ app.use("/api/upload", requireActiveUser, uploadRoutes);
 app.use("/api/premium", requireActiveUser, premiumRoutes);
 app.use("/api/admin", adminRoutes);
 app.use("/api", healthRoutes);
-
-import fs from 'fs';
 
 const frontendDistPath = path.join(_dirname, "../frontend/dist");
 // Only serve frontend if the front end build actually exists
@@ -53,8 +97,12 @@ if (fs.existsSync(path.join(frontendDistPath, "index.html"))) {
   });
 } else {
   // Fallback in case the wildcard above didn't get mounted (missing dist)
-  app.get('/', (req, res) => {
-    res.status(200).send("API Backend is running! (Note: The Frontend UI is not built or not served from this endpoint.)");
+  app.get("/", (req, res) => {
+    res
+      .status(200)
+      .send(
+        "API Backend is running! (Note: The Frontend UI is not built or not served from this endpoint.)",
+      );
   });
 }
 
