@@ -1,7 +1,7 @@
 import express from 'express';
 import multer from 'multer';
 import { uploadImage } from '../controllers/upload.controller.js';
-import { requireAuth } from '@clerk/express'; // ensure user is authed
+import { requireActiveUser } from '../middleware/auth.middleware.js';
 
 const router = express.Router();
 const storage = multer.memoryStorage();
@@ -17,7 +17,6 @@ const upload = multer({
   }
 });
 
-// Using custom requireAuth or clerk middleware
-router.post('/image', requireAuth(), upload.single('image'), uploadImage);
+router.post('/image', requireActiveUser, upload.single('image'), uploadImage);
 
 export default router;

@@ -1,6 +1,8 @@
-import { verifyToken } from '@clerk/express';
+import * as clerkExpress from '@clerk/express';
 import { ENV } from '../config/env.js';
 import { User } from '../models/user.model.js';
+
+const verifyToken = clerkExpress.verifyToken;
 
 /**
  * 1. Frontend gửi token qua `auth` handshake option
@@ -21,7 +23,11 @@ export async function socketAuthMiddleware(socket, next) {
     }
 
     // Verify token với Clerk — trả về payload nếu hợp lệ
-    const payload = await verifyToken(token, { 
+    if (typeof verifyToken !== 'function') {
+      return next(new Error('SOCKET_AUTH_ERROR: verifyToken is unavailable'));
+    }
+
+    const payload = await verifyToken(token, {
         secretKey: ENV.CLERK_SECRET_KEY,
         clockSkewInMs: 5 * 60 * 1000 // 5 minutes allow
     });

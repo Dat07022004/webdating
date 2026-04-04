@@ -25,7 +25,9 @@ export default function Discover() {
   const [direction, setDirection] = useState<"left" | "right" | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const { toast } = useToast();
-  const { getToken } = useAuth();
+  const auth = useAuth();
+  const getToken =
+    typeof auth?.getToken === "function" ? auth.getToken : async () => null;
 
   useEffect(() => {
     const fetchUsers = async () => {

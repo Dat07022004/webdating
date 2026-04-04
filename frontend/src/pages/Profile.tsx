@@ -81,7 +81,9 @@ const genderOptions = ["Man", "Woman", "Other"];
 
 export default function Profile() {
   const { user, isLoaded } = useUser();
-  const { getToken } = useAuth();
+  const auth = useAuth();
+  const getToken =
+    typeof auth?.getToken === "function" ? auth.getToken : async () => null;
   const clerk = useClerk();
   const { toast } = useToast();
   const fileInputRef = useRef<HTMLInputElement | null>(null);

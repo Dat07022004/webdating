@@ -1,12 +1,12 @@
 import express from 'express';
-import { requireAuth } from '@clerk/express';
+import { requireActiveUser } from '../middleware/auth.middleware.js';
 import { createMoMoPayment, getPremiumStatus, momoIPN, momoReturn } from '../controllers/premium.controller.js';
 
-const router = express.requireAuth ? express.Router().use(requireAuth()) : express.Router();
+const router = express.Router();
 
-router.post('/create-payment', requireAuth(), createMoMoPayment);
+router.post('/create-payment', requireActiveUser, createMoMoPayment);
 router.post('/momo-ipn', momoIPN);
 router.post('/momo-return', momoReturn);
-router.get('/status', requireAuth(), getPremiumStatus);
+router.get('/status', requireActiveUser, getPremiumStatus);
 
 export default router;
