@@ -86,11 +86,16 @@ export const useWebRTC = () => {
   const [remoteUserId, setRemoteUserIdState] = useState<string | null>(null);
   const [incomingCallerId, setIncomingCallerId] = useState<string | null>(null);
 
+  // FIX #2: remoteStream qua React State để trigger useEffect gán lại srcObject
+  // khi remoteVideoRef đã sẵn sàng trên DOM.
+  const [remoteStream, setRemoteStream] = useState<MediaStream | null>(null);
+
   const localVideoRef = useRef<HTMLVideoElement>(null);
   const remoteVideoRef = useRef<HTMLVideoElement>(null);
   const peerConnection = useRef<RTCPeerConnection | null>(null);
   const localStream = useRef<MediaStream | null>(null);
-  const remoteStream = useRef<MediaStream | null>(null);
+  // Ref vẫn dùng để tránh closure stale bên trong các callback PC
+  const remoteStreamRef = useRef<MediaStream | null>(null);
   const pendingIncomingCall = useRef<IncomingCallPayload | null>(null);
   const activeCallIdRef = useRef<string | null>(null);
   const pendingIceCandidates = useRef<RTCIceCandidateInit[]>([]);
@@ -114,84 +119,41 @@ export const useWebRTC = () => {
     setRemoteUserIdState(id);
   };
 
-  const clearRemoteMediaElement = () => {
-    if (remoteVideoRef.current) {
-      remoteVideoRef.current.srcObject = null;
-    }
-  };
-
-  const playRemoteVideo = useCallback(async () => {
+  // hoặc khi callState thay đổi (đảm bảo ref đã mount trên DOM).
+  useEffect(() => {
+    if (!remoteStream) return;
     const video = remoteVideoRef.current;
-    if (!video || !video.srcObject) return;
+    if (!video) return;
+
+    if (video.srcObject !== remoteStream) {
+      console.log("[WebRTC] useEffect: gán remoteStream vào remoteVideoRef");
+      video.srcObject = remoteStream;
+    }
 
     const attemptId = ++remotePlayAttemptRef.current;
-    try {
-      await video.play();
-    } catch (error) {
-      const err = error as { name?: string; message?: string };
-
-      // srcObject changes can interrupt play; retry once after render settles.
+    video.play().catch((err: { name?: string }) => {
       if (err?.name === "AbortError") {
         window.setTimeout(() => {
           if (attemptId === remotePlayAttemptRef.current) {
-            void video.play().catch((retryError) => {
-              console.warn(
-                "[WebRTC] remote video retry play failed:",
-                retryError,
-              );
+            void video.play().catch((retryErr) => {
+              console.warn("[WebRTC] remote video retry play failed:", retryErr);
             });
           }
         }, 120);
-        return;
+      } else {
+        console.warn("[WebRTC] remote video play failed:", err);
       }
+    });
+  }, [remoteStream, callState]);
 
-      console.warn("[WebRTC] remote video play failed:", error);
-    }
-  }, []);
-
-  const syncVideoElements = useCallback(() => {
-    if (localVideoRef.current && localStream.current) {
+  // Sync local video
+  useEffect(() => {
+    if (localStream.current && localVideoRef.current) {
       if (localVideoRef.current.srcObject !== localStream.current) {
         localVideoRef.current.srcObject = localStream.current;
       }
     }
-
-    if (remoteVideoRef.current && remoteStream.current) {
-      if (remoteVideoRef.current.srcObject !== remoteStream.current) {
-        remoteVideoRef.current.srcObject = remoteStream.current;
-      }
-    }
-  }, []);
-
-  const attachRemoteStream = async (stream: MediaStream) => {
-    remoteStream.current = stream;
-    if (!remoteVideoRef.current) return;
-
-    stream.getTracks().forEach((track) => {
-      if (!track.enabled) {
-        track.enabled = true;
-      }
-    });
-
-    const currentSrc = remoteVideoRef.current.srcObject as MediaStream | null;
-    const isSameStream =
-      currentSrc &&
-      currentSrc.id === stream.id &&
-      currentSrc.getTracks().length === stream.getTracks().length;
-
-    if (!isSameStream) {
-      remoteVideoRef.current.srcObject = stream;
-    }
-
-    await playRemoteVideo();
-  };
-
-  const ensureRemoteStream = () => {
-    if (!remoteStream.current) {
-      remoteStream.current = new MediaStream();
-    }
-    return remoteStream.current;
-  };
+  }, [callState]);
 
   const flushPendingIceCandidates = useCallback(async () => {
     if (!peerConnection.current || !peerConnection.current.remoteDescription)
@@ -205,6 +167,7 @@ export const useWebRTC = () => {
         await peerConnection.current.addIceCandidate(
           new RTCIceCandidate(candidate),
         );
+        console.log("[WebRTC] Flushed buffered ICE candidate");
       } catch (error) {
         console.error("[WebRTC] Failed to add buffered ICE candidate:", error);
       }
@@ -214,6 +177,7 @@ export const useWebRTC = () => {
   const emitEvent = useCallback(
     (eventName: string, payload: Record<string, unknown>) => {
       if (!socket) return;
+      console.log(`[WebRTC] emit: ${eventName}`, payload);
       socket.emit(eventName, payload);
     },
     [socket],
@@ -238,7 +202,6 @@ export const useWebRTC = () => {
     if (localStream.current) {
       localStream.current.getTracks().forEach((track) => {
         track.stop();
-        localStream.current?.removeTrack(track);
       });
       localStream.current = null;
     }
@@ -246,23 +209,70 @@ export const useWebRTC = () => {
       peerConnection.current.close();
       peerConnection.current = null;
     }
-    if (remoteStream.current) {
-      remoteStream.current.getTracks().forEach((track) => {
+    if (remoteStreamRef.current) {
+      remoteStreamRef.current.getTracks().forEach((track) => {
         track.stop();
-        remoteStream.current?.removeTrack(track);
       });
+      remoteStreamRef.current = null;
     }
     pendingIncomingCall.current = null;
     pendingIceCandidates.current = [];
-    remoteStream.current = null;
     activeCallIdRef.current = null;
     setCallStateSafe("idle");
     setRemoteUserIdSafe(null);
     setIncomingCallerId(null);
+    setRemoteStream(null);
 
     if (localVideoRef.current) localVideoRef.current.srcObject = null;
-    clearRemoteMediaElement();
+    if (remoteVideoRef.current) remoteVideoRef.current.srcObject = null;
   }, [clearTimers]);
+
+  // Assign stream vào video element trực tiếp và cập nhật state.
+  // QUAN TRỌNG: luôn tạo wrapper object mới { stream } để React
+  // detect được thay đổi kể cả khi stream reference giống nhau.
+  const applyRemoteStream = useCallback((stream: MediaStream) => {
+    stream.getTracks().forEach((track) => {
+      if (!track.enabled) track.enabled = true;
+    });
+    remoteStreamRef.current = stream;
+
+    console.log(
+      "[WebRTC] applyRemoteStream, tracks:",
+      stream.getTracks().map((t) => `${t.kind}:${t.readyState}`).join(", "),
+    );
+
+    // Path 1: Gán trực tiếp nếu ref đã mount
+    if (remoteVideoRef.current) {
+      if (remoteVideoRef.current.srcObject !== stream) {
+        remoteVideoRef.current.srcObject = stream;
+        console.log("[WebRTC] srcObject gán trực tiếp vào ref");
+      }
+      void remoteVideoRef.current.play().catch(() => {});
+    }
+
+    // Path 2: Lưu state để useEffect gán lại khi ref mount (nếu chưa mount)
+    // Bọc trong object mới để React luôn trigger re-render
+    setRemoteStream(new MediaStream(stream.getTracks()));
+  }, []);
+
+  // FIX #1: Thêm local tracks vào PeerConnection
+  // Hàm này được gọi TƯỜNG MINH sau khi initLocalStream() resolve thành công,
+  // đảm bảo tracks được add TRƯỚC KHI createOffer/createAnswer.
+  const addLocalTracksToPeer = useCallback((pc: RTCPeerConnection) => {
+    if (!localStream.current) {
+      console.warn("[WebRTC] addLocalTracksToPeer: localStream chưa sẵn sàng!");
+      return;
+    }
+    const existingTrackIds = new Set(
+      pc.getSenders().map((sender) => sender.track?.id),
+    );
+    localStream.current.getTracks().forEach((track) => {
+      if (!existingTrackIds.has(track.id) && localStream.current) {
+        pc.addTrack(track, localStream.current);
+        console.log(`[WebRTC] Added local ${track.kind} track to PC`);
+      }
+    });
+  }, []);
 
   const createPeerConnection = useCallback(
     (callId: string) => {
@@ -277,32 +287,48 @@ export const useWebRTC = () => {
         iceCandidatePoolSize: 10,
       });
 
+      // FIX #3: Gửi ICE candidate qua socket đến đúng bên kia
       pc.onicecandidate = (event) => {
         if (!event.candidate || !callId) return;
-
+        console.log("[WebRTC] onicecandidate: gửi candidate");
         emitEvent("webrtc-ice-candidate", {
           callId,
-          candidate: event.candidate,
+          candidate: event.candidate.toJSON(),
         });
       };
 
-      const inboundRemoteStream = ensureRemoteStream();
-      void attachRemoteStream(inboundRemoteStream);
-
+      // ontrack: dùng event.streams[0] (WebRTC đã bundle đủ tracks)
+      // Assign thẳng vào ref + update state để xử lý mọi timing
       pc.ontrack = (event) => {
-        const stream = ensureRemoteStream();
-        const hasTrack = stream
-          .getTracks()
-          .some((track) => track.id === event.track.id);
-        if (!hasTrack) {
-          stream.addTrack(event.track);
-        }
+        console.log(
+          "[WebRTC] ontrack:",
+          event.track.kind,
+          "readyState:",
+          event.track.readyState,
+          "streams:",
+          event.streams.length,
+        );
 
+        // Ưu tiên stream có sẵn từ event (đã bundle audio+video)
+        const stream =
+          event.streams[0] ||
+          (() => {
+            if (!remoteStreamRef.current) {
+              remoteStreamRef.current = new MediaStream();
+            }
+            if (!remoteStreamRef.current.getTracks().some((t) => t.id === event.track.id)) {
+              remoteStreamRef.current.addTrack(event.track);
+            }
+            return remoteStreamRef.current;
+          })();
+
+        applyRemoteStream(stream);
+
+        // Khi track unmute (data bắt đầu flow), apply lại
         event.track.onunmute = () => {
-          void attachRemoteStream(stream);
+          console.log(`[WebRTC] Remote ${event.track.kind} unmuted - reapplying stream`);
+          applyRemoteStream(stream);
         };
-
-        void attachRemoteStream(stream);
       };
 
       pc.oniceconnectionstatechange = () => {
@@ -343,6 +369,7 @@ export const useWebRTC = () => {
 
       pc.onconnectionstatechange = () => {
         const connectionState = pc.connectionState;
+        console.log("[WebRTC] connectionState:", connectionState);
         if (connectionState === "connected") {
           clearTimers();
           setCallStateSafe("in_call");
@@ -361,23 +388,13 @@ export const useWebRTC = () => {
         }
       };
 
-      if (localStream.current) {
-        const existingTrackIds = new Set(
-          pc.getSenders().map((sender) => sender.track?.id),
-        );
-        localStream.current.getTracks().forEach((track) => {
-          if (localStream.current) {
-            if (!existingTrackIds.has(track.id)) {
-              pc.addTrack(track, localStream.current);
-            }
-          }
-        });
-      }
+      // KHÔNG add tracks ở đây nữa — addLocalTracksToPeer() được gọi tường minh
+      // sau initLocalStream() để đảm bảo thứ tự đúng.
 
       peerConnection.current = pc;
       return pc;
     },
-    [cleanup, clearTimers, emitEvent, playRemoteVideo],
+    [cleanup, clearTimers, emitEvent, applyRemoteStream],
   );
 
   const initLocalStream = async () => {
@@ -410,6 +427,10 @@ export const useWebRTC = () => {
       if (localVideoRef.current) {
         localVideoRef.current.srcObject = stream;
       }
+      console.log(
+        "[WebRTC] Local stream ready, tracks:",
+        stream.getTracks().map((t) => t.kind).join(", "),
+      );
       return true;
     } catch (e) {
       console.error("Failed to get media devices:", e);
@@ -441,9 +462,10 @@ export const useWebRTC = () => {
     if (!socket || !pendingIncomingCall.current || !remoteUserIdRef.current)
       return;
 
+    // FIX #1: Init local stream TRƯỚC
     const success = await initLocalStream();
     if (!success) {
-      alert("CĂNG RỒI: Không xin được quyền mở Camera hoặc Mic trên máy này!");
+      alert("Không thể mở Camera hoặc Mic. Vui lòng kiểm tra quyền truy cập!");
       rejectCall();
       return;
     }
@@ -451,7 +473,10 @@ export const useWebRTC = () => {
     const { callId } = pendingIncomingCall.current;
     activeCallIdRef.current = callId;
     setCallStateSafe("connecting");
-    createPeerConnection(callId);
+
+    // FIX #1: Tạo PC và ADD TRACKS vào ngay (localStream đã sẵn sàng)
+    const pc = createPeerConnection(callId);
+    addLocalTracksToPeer(pc);
 
     emitEvent("call-accepted", {
       callId,
@@ -503,25 +528,15 @@ export const useWebRTC = () => {
   }, [cleanup, emitEvent, socket]);
 
   useEffect(() => {
-    const frameId = window.requestAnimationFrame(() => {
-      syncVideoElements();
-    });
-
-    return () => {
-      window.cancelAnimationFrame(frameId);
-    };
-  }, [callState, syncVideoElements]);
-
-  useEffect(() => {
     if (!socket) return;
 
     const handleIncomingCall = async (
       data:
         | IncomingCallPayload
         | {
-            callerUserId: string;
-            callId?: string;
-          },
+          callerUserId: string;
+          callId?: string;
+        },
     ) => {
       const callId =
         "callId" in data && data.callId
@@ -556,6 +571,7 @@ export const useWebRTC = () => {
       setRemoteUserIdSafe(calleeUserId || remoteUserIdRef.current);
       setCallStateSafe("connecting");
 
+      // FIX #1: Đảm bảo local stream TỒN TẠI trước
       const success = await initLocalStream();
       if (!success) {
         emitEvent("call-ended", { callId, reason: "media-failed" });
@@ -563,11 +579,14 @@ export const useWebRTC = () => {
         return;
       }
 
+      // FIX #1: Tạo PC và ADD TRACKS trước khi createOffer
       const pc = createPeerConnection(callId);
+      addLocalTracksToPeer(pc);
+
       try {
         const offer = await pc.createOffer();
         await pc.setLocalDescription(offer);
-
+        console.log("[WebRTC] Offer created and sent");
         emitEvent("webrtc-offer", { callId, offer });
       } catch (error) {
         console.error("[WebRTC] Failed creating/sending offer:", error);
@@ -588,17 +607,33 @@ export const useWebRTC = () => {
       if (activeCallIdRef.current && activeCallIdRef.current !== data.callId)
         return;
 
+      console.log("[WebRTC] Received offer, processing...");
       activeCallIdRef.current = data.callId;
       setCallStateSafe("connecting");
 
+      // FIX #1: Đảm bảo local stream có trước khi createAnswer
+      // (localStream đã được init bởi answerCall, nhưng double-check để chắc)
+      if (!localStream.current) {
+        const success = await initLocalStream();
+        if (!success) {
+          console.error("[WebRTC] Cannot get local stream for answer");
+          cleanup();
+          return;
+        }
+      }
+
       const pc = createPeerConnection(data.callId);
+
+      // FIX #1: ADD TRACKS trước khi createAnswer
+      addLocalTracksToPeer(pc);
+
       try {
         await pc.setRemoteDescription(new RTCSessionDescription(data.offer));
         await flushPendingIceCandidates();
 
         const answer = await pc.createAnswer();
         await pc.setLocalDescription(answer);
-
+        console.log("[WebRTC] Answer created and sent");
         emitEvent("webrtc-answer", { callId: data.callId, answer });
       } catch (error) {
         console.error("[WebRTC] Failed handling offer:", error);
@@ -638,6 +673,7 @@ export const useWebRTC = () => {
           await flushPendingIceCandidates();
           clearTimers();
           setCallStateSafe("in_call");
+          console.log("[WebRTC] Answer handled, now in_call");
         } catch (error) {
           console.error("[WebRTC] Failed handling answer:", error);
           cleanup();
@@ -645,14 +681,15 @@ export const useWebRTC = () => {
       }
     };
 
+    // FIX #3: Xử lý ICE candidates — buffer nếu remoteDescription chưa set
     const handleIceCandidate = async (
       data:
         | IcePayload
         | {
-            senderUserId?: string;
-            callId?: string;
-            candidate: RTCIceCandidateInit;
-          },
+          senderUserId?: string;
+          callId?: string;
+          candidate: RTCIceCandidateInit;
+        },
     ) => {
       const callId = "callId" in data ? data.callId : undefined;
       if (
@@ -669,7 +706,9 @@ export const useWebRTC = () => {
         !peerConnection.current ||
         !peerConnection.current.remoteDescription
       ) {
+        // Buffer lại để add sau khi setRemoteDescription
         pendingIceCandidates.current.push(candidate);
+        console.log("[WebRTC] ICE candidate buffered (no remote desc yet)");
         return;
       }
 
@@ -677,6 +716,7 @@ export const useWebRTC = () => {
         await peerConnection.current.addIceCandidate(
           new RTCIceCandidate(candidate),
         );
+        console.log("[WebRTC] ICE candidate added successfully");
       } catch (error) {
         console.error("[WebRTC] Failed to add ICE candidate:", error);
       }
@@ -694,50 +734,64 @@ export const useWebRTC = () => {
       cleanup();
     };
 
-    const handleSocketDisconnect = () => {
-      if (callStateRef.current !== "idle") {
-        cleanup();
+    const disconnectTimerRef = { current: null as ReturnType<typeof setTimeout> | null };
+
+    // KHÔNG cleanup ngay khi disconnect — Cloudflare tunnel có thể mất kết nối
+    // tạm thời và reconnect lại. Cho 8 giây grace period.
+    const handleSocketDisconnect = (reason: string) => {
+      console.log("[WebRTC] Socket disconnected:", reason);
+      if (callStateRef.current === "idle") return;
+
+      disconnectTimerRef.current = setTimeout(() => {
+        // Nếu sau 8s vẫn không reconnect được, kết thúc cuộc gọi
+        if (callStateRef.current !== "idle") {
+          console.warn("[WebRTC] Socket không reconnect được, kết thúc cuộc gọi");
+          cleanup();
+        }
+      }, 8000);
+    };
+
+    const handleSocketReconnect = () => {
+      console.log("[WebRTC] Socket reconnected");
+      // Xóa timer cleanup nếu reconnect kịp
+      if (disconnectTimerRef.current) {
+        clearTimeout(disconnectTimerRef.current);
+        disconnectTimerRef.current = null;
       }
     };
 
     socket.on("incoming-call", handleIncomingCall);
-
     socket.on("call-accepted", handleCallAccepted);
-
     socket.on("webrtc-offer", handleOffer);
     socket.on("webrtc-answer", handleAnswer);
-
     socket.on("webrtc-ice-candidate", handleIceCandidate);
-
     socket.on("call-ended", handleCallEnded);
     socket.on("call-rejected", handleCallRejected);
     socket.on("call-failed", handleCallFailed);
     socket.on("disconnect", handleSocketDisconnect);
-
-    syncVideoElements();
+    socket.on("connect", handleSocketReconnect);
 
     return () => {
+      if (disconnectTimerRef.current) clearTimeout(disconnectTimerRef.current);
       socket.off("incoming-call", handleIncomingCall);
-
       socket.off("call-accepted", handleCallAccepted);
-
       socket.off("webrtc-offer", handleOffer);
       socket.off("webrtc-answer", handleAnswer);
-
       socket.off("webrtc-ice-candidate", handleIceCandidate);
-
       socket.off("call-ended", handleCallEnded);
       socket.off("call-rejected", handleCallRejected);
       socket.off("call-failed", handleCallFailed);
       socket.off("disconnect", handleSocketDisconnect);
+      socket.off("connect", handleSocketReconnect);
     };
   }, [
     socket,
     cleanup,
     createPeerConnection,
+    addLocalTracksToPeer,
     emitEvent,
     flushPendingIceCandidates,
-    syncVideoElements,
+    applyRemoteStream,
   ]);
 
   return {

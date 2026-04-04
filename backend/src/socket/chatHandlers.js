@@ -274,15 +274,32 @@ export function registerChatHandlers(io, socket) {
 
   const handleWebrtcOffer = (data = {}) => {
     const { callId, offer } = data;
-    if (!callId || !offer || !callSessions.has(callId)) return;
+    if (!callId || !offer || !callSessions.has(callId)) {
+      console.warn("[Socket] webrtc-offer: session not found", callId);
+      return;
+    }
 
     const session = callSessions.get(callId);
-    if (socket.id !== session.callerSocketId || !session.acceptedSocketId) {
+
+    // Validate bằng userId (stable) thay vì socket.id (thay đổi khi reconnect)
+    if (session.callerUserId !== userId) {
       io.to(socket.id).emit("call-failed", {
         reason: "invalid-offer-route",
         callId,
       });
       return;
+    }
+
+    if (!session.acceptedSocketId) {
+      // Callee chưa accept nhưng offer đã đến — buffer lại với cách ignore nhẹ
+      console.warn("[Socket] webrtc-offer: no acceptedSocketId yet for", callId);
+      return;
+    }
+
+    // Cập nhật callerSocketId nếu socket reconnect (ID mới)
+    if (session.callerSocketId !== socket.id) {
+      console.log("[Socket] Caller socket reconnected, updating callerSocketId");
+      session.callerSocketId = socket.id;
     }
 
     io.to(session.acceptedSocketId).emit("webrtc-offer", {
@@ -294,15 +311,26 @@ export function registerChatHandlers(io, socket) {
 
   const handleWebrtcAnswer = (data = {}) => {
     const { callId, answer } = data;
-    if (!callId || !answer || !callSessions.has(callId)) return;
+    if (!callId || !answer || !callSessions.has(callId)) {
+      console.warn("[Socket] webrtc-answer: session not found", callId);
+      return;
+    }
 
     const session = callSessions.get(callId);
-    if (socket.id !== session.acceptedSocketId) {
+
+    // Validate bằng userId (stable)
+    if (session.calleeUserId !== userId) {
       io.to(socket.id).emit("call-failed", {
         reason: "invalid-answer-route",
         callId,
       });
       return;
+    }
+
+    // Cập nhật acceptedSocketId nếu callee reconnect
+    if (session.acceptedSocketId !== socket.id) {
+      console.log("[Socket] Callee socket reconnected, updating acceptedSocketId");
+      session.acceptedSocketId = socket.id;
     }
 
     io.to(session.callerSocketId).emit("webrtc-answer", { callId, answer });
@@ -317,13 +345,28 @@ export function registerChatHandlers(io, socket) {
       const session = callSessions.get(callId);
 
       let targetSocketId = null;
-      if (socket.id === session.callerSocketId) {
+
+      // Xác định target bằng userId để tránh vấn đề reconnect
+      if (session.callerUserId === userId) {
+        // Caller gửi candidate → forward đến callee
         targetSocketId = session.acceptedSocketId;
-      } else if (socket.id === session.acceptedSocketId) {
+        // Cập nhật callerSocketId nếu reconnect
+        if (session.callerSocketId !== socket.id) {
+          session.callerSocketId = socket.id;
+        }
+      } else if (session.calleeUserId === userId) {
+        // Callee gửi candidate → forward đến caller
         targetSocketId = session.callerSocketId;
+        // Cập nhật acceptedSocketId nếu reconnect
+        if (session.acceptedSocketId !== socket.id) {
+          session.acceptedSocketId = socket.id;
+        }
       }
 
-      if (!targetSocketId) return;
+      if (!targetSocketId) {
+        console.warn("[Socket] ICE: no target socket for userId", userId);
+        return;
+      }
 
       io.to(targetSocketId).emit("webrtc-ice-candidate", { callId, candidate });
       io.to(targetSocketId).emit("ice_candidate", {

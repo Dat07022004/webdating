@@ -110,7 +110,6 @@ export const VideoCallModal: React.FC<VideoCallModalProps> = ({
               ref={remoteVideoRef}
               autoPlay
               playsInline
-              muted={false}
               className="w-full h-full object-cover"
             />
 

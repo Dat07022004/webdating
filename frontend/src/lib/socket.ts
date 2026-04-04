@@ -12,10 +12,15 @@ export const initializeSocket = (token: string): Socket => {
     socket = io(SOCKET_URL, {
       auth: { token },
       path: "/socket.io",
-      transports: ["websocket", "polling"],
+      // Dùng polling trước để tránh UDP block của Cloudflare tunnel,
+      // sau đó upgrade lên websocket (TCP-based, ổn hơn với QUIC errors)
+      transports: ["polling", "websocket"],
       withCredentials: true,
       reconnection: true,
-      reconnectionAttempts: 5,
+      reconnectionAttempts: 10,
+      reconnectionDelay: 1000,
+      reconnectionDelayMax: 5000,
+      timeout: 20000,
     });
   } else {
     socket.auth = { token };
