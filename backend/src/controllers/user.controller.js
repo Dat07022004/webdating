@@ -101,7 +101,10 @@ export const getDiscoverUsers = async ({ clerkId }) => {
     if (candidates.length === 0) {
         candidates = await User.find({
             _id: { $nin: excludedIds }
-        }).limit(20).select('_id profile username status');
+        })
+        .sort({ 'behaviorSignals.reputationScore': -1 }) // Prioritize high reputation
+        .limit(20)
+        .select('_id profile username status behaviorSignals');
         
         if (candidates.length > 0) {
              const suggestionDocs = candidates.map(c => ({

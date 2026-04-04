@@ -2,7 +2,7 @@ import { Router } from 'express';
 import multer from 'multer';
 import { ENV } from '../config/env.js';
 import { getMyProfile, onboardUser, updateMyProfile, uploadUserPhotos, getDiscoverUsers, handleUserAction, getConnections } from '../controllers/user.controller.js';
-import { submitReview } from '../controllers/review.controller.js';
+import { requireActiveUser, resolveAuthContext } from '../middleware/auth.middleware.js';
 
 const router = Router();
 const upload = multer({
@@ -58,6 +58,11 @@ router.post('/photos/upload', upload.array('photos', 6), async (req, res) => {
 		return sendError(res, error, 'Photo upload failed');
 	}
 });
+
+router.use('/me', requireActiveUser);
+router.use('/discover', requireActiveUser);
+router.use('/action', requireActiveUser);
+router.use('/connections', requireActiveUser);
 
 router.get('/me', async (req, res) => {
 	try {

@@ -1,17 +1,14 @@
 import { Review } from '../models/review.model.js';
 import { User } from '../models/user.model.js';
+import { Notification } from '../models/notification.model.js';
 
 export const submitReview = async (req, res) => {
     try {
         const { appointmentId, reviewedId, metInPerson, whoDidNotShow, photoAccuracy, behaviors, suggestSimilar } = req.body;
         
-        // Use resolveAuthContext style or req.auth.userId
-        const auth = typeof req.auth === 'function' ? req.auth() : req.auth;
-        const clerkId = auth?.userId;
-        if (!clerkId) return res.status(401).json({ success: false, message: 'Unauthorized' });
-
-        const currentUser = await User.findOne({ clerkId });
-        if (!currentUser) return res.status(404).json({ success: false, message: 'User not found' });
+        // Use user attached by requireActiveUser middleware
+        const currentUser = req.user;
+        if (!currentUser) return res.status(401).json({ success: false, message: 'Unauthorized' });
 
         // Check if user has already reviewed this appointment
         const existingReview = await Review.findOne({ 
@@ -90,8 +87,24 @@ const processReviewLogic = async (review) => {
         }
 
         // Logic 4: Lock account if many negative reviews
-        // (This would typically count reviews in a time window)
-        // For simplicity: If reputation falls too low, auto-ban
+        // Logic 5: Suggest profile adjustment if multiple average reviews
+        const reviewCount = await Review.countDocuments({ reviewedId: reviewedUser._id });
+        const averageReviews = await Review.countDocuments({ 
+            reviewedId: reviewedUser._id,
+            photoAccuracy: { $gte: 50, $lte: 80 } 
+        });
+
+        if (averageReviews >= 2) {
+            // Trigger a system notification or suggestion
+            await Notification.create({
+                userId: reviewedUser._id,
+                type: 'system',
+                title: 'Profile Suggestion',
+                message: 'Dựa trên phản hồi, bạn nên cập nhật ảnh đại diện để phản ánh chính xác hơn diện mạo hiện tại của mình.',
+                metadata: { suggestionType: 'photo_update' }
+            });
+        }
+
         if (reviewedUser.behaviorSignals.reputationScore < 40) {
              lockAccount(reviewedUser, 7);
         }

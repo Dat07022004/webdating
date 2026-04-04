@@ -42,6 +42,12 @@ const resolveActiveUserByClerkId = async (clerkId) => {
         return { error: { status: 403, message: 'Forbidden: Account is banned' } };
     }
 
+    // Check if account is locked (temporary)
+    if (user.status?.isLocked && user.status?.lockedUntil && user.status.lockedUntil > new Date()) {
+        const remainingDays = Math.ceil((user.status.lockedUntil - new Date()) / (1000 * 60 * 60 * 24));
+        return { error: { status: 403, message: `Account is locked until ${user.status.lockedUntil.toLocaleDateString()}. Remaining: ${remainingDays} day(s).` } };
+    }
+
     return { user };
 };
 

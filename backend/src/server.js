@@ -12,7 +12,8 @@ import premiumRoutes from "./routes/premium.routes.js";
 import notificationRoutes from "./routes/notification.routes.js";
 import adminRoutes from "./routes/admin.route.js";
 import revenueRoutes from "./routes/revenue.routes.js";
-import { requireActiveUser } from "./middleware/auth.middleware.js";
+import safetyRoutes from "./routes/safety.routes.js";
+import appointmentRoutes from "./routes/appointment.routes.js";
 
 import { functions, inngest } from "./config/inngest.js";
 import http from "http";
@@ -41,6 +42,8 @@ app.use("/api/upload", requireActiveUser, uploadRoutes);
 app.use("/api/premium", requireActiveUser, premiumRoutes);
 app.use("/api/admin", adminRoutes);
 app.use("/api/revenue", revenueRoutes);
+app.use("/api/safety", safetyRoutes);
+app.use("/api/appointments", appointmentRoutes);
 app.use("/api", healthRoutes);
 
 import fs from 'fs';

@@ -110,7 +110,9 @@ const userSchema = new mongoose.Schema({
     },
     status: {
         online: { type: Boolean, default: false },
-        lastSeen: { type: Date, default: Date.now }
+        lastSeen: { type: Date, default: Date.now },
+        isLocked: { type: Boolean, default: false },
+        lockedUntil: { type: Date, default: null }
     }
 }, { timestamps: true });
 
