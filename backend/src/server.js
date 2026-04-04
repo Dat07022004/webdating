@@ -21,50 +21,19 @@ import { initSocket } from "./socket/index.js";
 import cors from "cors";
 
 const app = express();
-const defaultAllowedOrigins = [
-  "https://heartly-webdating-frontend-8h1el.sevalla.app",
-  "http://localhost:5173",
-  "http://127.0.0.1:5173",
-];
-
-const normalizeOrigin = (origin) => origin?.trim().replace(/\/$/, "");
-
-const allowedOrigins = new Set(
-  [ENV.ALLOWED_ORIGINS, ENV.FRONTEND_URL]
-    .flatMap((value) => {
-      if (!value) return [];
-
-      if (value.trim() === "*") {
-        return ["*"];
-      }
-
-      return value
-        .split(",")
-        .map((item) => normalizeOrigin(item))
-        .filter(Boolean);
-    })
-    .concat(defaultAllowedOrigins.map((origin) => normalizeOrigin(origin))),
-);
-
 const corsOptions = {
-  origin: (origin, callback) => {
-    if (
-      !origin ||
-      allowedOrigins.has("*") ||
-      allowedOrigins.has(normalizeOrigin(origin))
-    ) {
-      callback(null, true);
-      return;
-    }
-
-    callback(null, false);
-  },
+  origin: [
+    "https://heartly-webdating-frontend-8h1el.sevalla.app",
+    "http://localhost:5173",
+    "http://localhost:3000",
+  ],
   credentials: true,
-  methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+  methods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
+  allowedHeaders: ["Content-Type", "Authorization", "Accept"],
 };
 
 app.use(cors(corsOptions));
-app.options("/{*path}", cors(corsOptions));
+app.options("*", cors(corsOptions));
 const httpServer = http.createServer(app);
 const io = initSocket(httpServer);
 
