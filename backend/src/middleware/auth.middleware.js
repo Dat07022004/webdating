@@ -18,8 +18,17 @@ export const resolveAuthContext = (req) => {
 const resolveClerkIdFromRequest = (req, auth) => {
     const fallbackClerkId = ENV.NODE_ENV === 'production'
         ? undefined
-        : req.body?.clerkId || req.query?.clerkId;
+        : req.headers?.['x-clerk-id'] || req.body?.clerkId || req.query?.clerkId;
     return auth?.userId || fallbackClerkId;
+};
+
+const resolveJwtFromRequest = (req) => {
+    const authHeader = req.headers?.authorization;
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+        return null;
+    }
+
+    return authHeader.slice('Bearer '.length);
 };
 
 const resolveActiveUserByClerkId = async (clerkId) => {
@@ -39,6 +48,8 @@ const resolveActiveUserByClerkId = async (clerkId) => {
 export const requireActiveUser = async (req, res, next) => {
     try {
         const auth = resolveAuthContext(req);
+        const jwt = resolveJwtFromRequest(req);
+        console.log('JWT:', jwt || '(missing)');
         // Allow fallback primarily for dev testing
         const clerkId = resolveClerkIdFromRequest(req, auth);
 
@@ -62,6 +73,8 @@ export const requireActiveUser = async (req, res, next) => {
 export const requireAdmin = async (req, res, next) => {
     try {
         const auth = resolveAuthContext(req);
+        const jwt = resolveJwtFromRequest(req);
+        console.log('JWT:', jwt || '(missing)');
         // Allow fallback primarily for dev testing
         const clerkId = resolveClerkIdFromRequest(req, auth);
 
@@ -91,6 +104,8 @@ export const requireAdmin = async (req, res, next) => {
 export const requireManagerOrAdmin = async (req, res, next) => {
     try {
         const auth = resolveAuthContext(req);
+        const jwt = resolveJwtFromRequest(req);
+        console.log('JWT:', jwt || '(missing)');
         // Allow fallback primarily for dev testing
         const clerkId = resolveClerkIdFromRequest(req, auth);
 

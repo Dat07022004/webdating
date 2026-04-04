@@ -2,6 +2,7 @@ import express from 'express';
 import multer from 'multer';
 import { uploadImage } from '../controllers/upload.controller.js';
 import { requireAuth } from '@clerk/express'; // ensure user is authed
+import { ENV } from '../config/env.js';
 
 const router = express.Router();
 const storage = multer.memoryStorage();
@@ -17,8 +18,10 @@ const upload = multer({
   }
 });
 
+const authMiddleware = ENV.NODE_ENV === 'production' ? requireAuth() : (_req, _res, next) => next();
+
 // Using custom requireAuth or clerk middleware
-router.post('/image', requireAuth(), upload.single('image'), async (req, res) => {
+router.post('/image', authMiddleware, upload.single('image'), async (req, res) => {
   try {
     const result = await uploadImage({ file: req.file });
     return res.status(200).json({
