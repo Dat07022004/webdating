@@ -1,0 +1,70 @@
+version: "3.9"
+
+services:
+  mongo:
+    image: mongo:7
+    container_name: webdating-mongo
+    restart: unless-stopped
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo_data:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  backend:
+    image: ${BACKEND_IMAGE:-webdating-backend:local}
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: webdating-backend
+    restart: unless-stopped
+    depends_on:
+      mongo:
+        condition: service_healthy
+    ports:
+      - "3000:3000"
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      DATABASE_URL: ${DATABASE_URL:-mongodb://mongo:27017/webdating}
+      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-http://localhost}
+      FRONTEND_URL: ${FRONTEND_URL:-http://localhost}
+      API_BASE_URL: ${API_BASE_URL:-http://localhost:3000}
+
+      CLERK_PUBLISHABLE_KEY: ${CLERK_PUBLISHABLE_KEY:-pk_test_mock}
+      CLERK_SECRET_KEY: ${CLERK_SECRET_KEY:-sk_test_mock}
+
+      CLOUDINARY_API_KEY: ${CLOUDINARY_API_KEY:-}
+      CLOUDINARY_API_SECRET: ${CLOUDINARY_API_SECRET:-}
+      CLOUDINARY_CLOUD_NAME: ${CLOUDINARY_CLOUD_NAME:-}
+
+      INNGEST_SIGNING_KEY: ${INNGEST_SIGNING_KEY:-}
+
+      MOMO_PARTNER_CODE: ${MOMO_PARTNER_CODE:-}
+      MOMO_ACCESS_KEY: ${MOMO_ACCESS_KEY:-}
+      MOMO_SECRET_KEY: ${MOMO_SECRET_KEY:-}
+      MOMO_ENDPOINT: ${MOMO_ENDPOINT:-https://test-payment.momo.vn/v2/gateway/api/create}
+
+  frontend:
+    image: ${FRONTEND_IMAGE:-webdating-frontend:local}
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        VITE_CLERK_PUBLISHABLE_KEY: ${VITE_CLERK_PUBLISHABLE_KEY:-pk_test_mock}
+        VITE_API_URL: ${VITE_API_URL:-http://localhost:3000}
+        VITE_SOCKET_URL: ${VITE_SOCKET_URL:-http://localhost:3000}
+    container_name: webdating-frontend
+    restart: unless-stopped
+    depends_on:
+      - backend
+    ports:
+      - "80:80"
+
+volumes:
+  mongo_data:

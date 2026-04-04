@@ -131,26 +131,27 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Build and Push Backend Image
-        uses: docker/build-push-action@v6
-        with:
-          context: ./backend
-          file: ./backend/Dockerfile
-          push: true
-          tags: |
-            ghcr.io/${{ env.REGISTRY_OWNER }}/webdating-backend:latest
-            ghcr.io/${{ env.REGISTRY_OWNER }}/webdating-backend:${{ github.sha }}
+      - name: Build Images with Docker Compose
+        env:
+          BACKEND_IMAGE: ghcr.io/${{ env.REGISTRY_OWNER }}/webdating-backend:${{ github.sha }}
+          FRONTEND_IMAGE: ghcr.io/${{ env.REGISTRY_OWNER }}/webdating-frontend:${{ github.sha }}
+          VITE_CLERK_PUBLISHABLE_KEY: ${{ secrets.FRONTEND_VITE_CLERK_PUBLISHABLE_KEY }}
+          VITE_API_URL: ${{ secrets.FRONTEND_VITE_API_URL }}
+          VITE_SOCKET_URL: ${{ secrets.FRONTEND_VITE_SOCKET_URL }}
+        run: docker compose -f docker-compose.yaml build backend frontend
 
-      - name: Build and Push Frontend Image
-        uses: docker/build-push-action@v6
-        with:
-          context: ./frontend
-          file: ./frontend/Dockerfile
-          push: true
-          build-args: |
-            VITE_CLERK_PUBLISHABLE_KEY=${{ secrets.FRONTEND_VITE_CLERK_PUBLISHABLE_KEY }}
-            VITE_API_URL=${{ secrets.FRONTEND_VITE_API_URL }}
-            VITE_SOCKET_URL=${{ secrets.FRONTEND_VITE_SOCKET_URL }}
-          tags: |
-            ghcr.io/${{ env.REGISTRY_OWNER }}/webdating-frontend:latest
-            ghcr.io/${{ env.REGISTRY_OWNER }}/webdating-frontend:${{ github.sha }}
+      - name: Push SHA Tags and Retag Latest
+        env:
+          BACKEND_IMAGE_SHA: ghcr.io/${{ env.REGISTRY_OWNER }}/webdating-backend:${{ github.sha }}
+          FRONTEND_IMAGE_SHA: ghcr.io/${{ env.REGISTRY_OWNER }}/webdating-frontend:${{ github.sha }}
+          BACKEND_IMAGE_LATEST: ghcr.io/${{ env.REGISTRY_OWNER }}/webdating-backend:latest
+          FRONTEND_IMAGE_LATEST: ghcr.io/${{ env.REGISTRY_OWNER }}/webdating-frontend:latest
+        run: |
+          docker push "$BACKEND_IMAGE_SHA"
+          docker push "$FRONTEND_IMAGE_SHA"
+
+          docker tag "$BACKEND_IMAGE_SHA" "$BACKEND_IMAGE_LATEST"
+          docker tag "$FRONTEND_IMAGE_SHA" "$FRONTEND_IMAGE_LATEST"
+
+          docker push "$BACKEND_IMAGE_LATEST"
+          docker push "$FRONTEND_IMAGE_LATEST"
