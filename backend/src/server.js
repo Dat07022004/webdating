@@ -22,7 +22,7 @@ import cors from "cors";
 
 const app = express();
 const defaultAllowedOrigins = [
-  "https://heartly-webdating-frontend-8h1e1.sevalla.app",
+  "https://heartly-webdating-frontend-8h1el.sevalla.app",
   "http://localhost:5173",
   "http://127.0.0.1:5173",
 ];
