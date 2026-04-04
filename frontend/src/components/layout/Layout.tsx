@@ -11,7 +11,7 @@ export const Layout = ({ children, isAuthenticated = false, showNavbar = true }:
   return (
     <div className="min-h-screen bg-transparent">
       {showNavbar && <Navbar isAuthenticated={isAuthenticated} />}
-      <main className={showNavbar ? "pt-20" : ""}>
+      <main className={showNavbar ? "pt-2" : ""}>
         {children}
       </main>
     </div>

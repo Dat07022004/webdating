@@ -1,0 +1,133 @@
+WebDating — AI Agent System Design
+
+1. Công cụ (Tools) sử dụng
+- IDE: Visual Studio Code (MCP, debugger, test runner)
+- Backend: Node.js, Express
+- Frontend: React + Vite + TypeScript
+- Realtime: Socket.IO
+- Queue/Workflow: Inngest
+- Database: MongoDB (Mongoose)
+- Storage: Cloudinary
+- Auth: Clerk
+- CI/Test: Jest (backend), Vitest/React Testing Library (frontend)
+- AI / Agent: GPT-like model (RAG + embeddings), OpenAI/LLM provider
+
+2. Kiến trúc hệ thống
+- Monolith modular (Backend + Frontend trong cùng repo) với microservices-ready modules
+- Mô hình chính: MVC cho backend; Frontend SPA (React)
+- Realtime: Socket server chạy cùng Node HTTP server
+- Background jobs: Inngest functions + reminder worker
+
+3. Cấu trúc dự án (Folder structure - tóm tắt)
+- /backend
+  - src/
+    - config/ (env, db, inngest)
+    - controllers/ (user, chat, upload, premium, health)
+    - models/ (user.model.js, message.model.js, conversation.model.js, ...)
+    - routes/ (user.routes.js, chat.routes.js, ...)
+    - services/ (business logic + AI agent service)
+    - socket/ (init, handlers)
+    - workers/ (reminderWorker.js)
+    - server.js
+- /frontend
+  - src/ (pages, components, hooks, lib)
+
+4. Mô tả module (Frontend / Backend / Database)
+- Frontend (React):
+  - Màn hình demo: "Notifications & Invites" (background trắng) hiển thị notification realtime, accept/decline invite.
+  - Components: `NotificationList`, `InviteCard`, `VideoCallModal`.
+  - Socket hook: `useSocket` để subscribe events `invite:created`, `invite:accepted`, `notification:new`.
+- Backend (Express):
+  - API: `/api/notifications`, `/api/invites`, `/api/chat`.
+  - Realtime: Socket.IO events gửi tới client.
+  - Worker: reminderWorker xử lý job gửi nhắc nhở.
+  - Inngest: định nghĩa functions cho background workflows (sendEmail, createNotification).
+- Database (MongoDB):
+  - Collections: users, notifications, invites, messages, conversations.
+  - Schema mẫu: `notification { _id, userId, type, payload, read, createdAt }`.
+
+5. Các tác vụ bắt buộc (Plan) — roadmap ngắn hạn
+- 1. Soạn nội dung tài liệu kiến trúc + mapping tools (xong)
+- 2. Định nghĩa API và schema cho notifications/invites
+- 3. Tạo frontend screen (white background) — NotificationList + InviteCard
+- 4. Implement Socket event handler backend + frontend
+- 5. Thêm Inngest function để gửi notification + test worker
+- 6. Viết unit test cho API (Jest) và component (RTL)
+- 7. Debug flow realtime bằng VSCode (breakpoints + MCP)
+
+6. Preview code
+- Frontend: `NotificationList` (React/TSX) — màn hình trắng
+
+// NotificationList.tsx (preview)
+import React, {useEffect, useState} from 'react';
+import useSocket from '../hooks/useSocket';
+
+export default function NotificationList(){
+  const [items, setItems] = useState([]);
+  const socket = useSocket();
+
+  useEffect(()=>{
+    fetch('/api/notifications')
+      .then(r=>r.json())
+      .then(setItems);
+  },[]);
+
+  useEffect(()=>{
+    if(!socket) return;
+    socket.on('notification:new', (n)=> setItems(prev=>[n, ...prev]));
+    return ()=>{ socket.off('notification:new'); }
+  },[socket]);
+
+  return (
+    <div style={{background:'#fff', padding:20}}>
+      <h2>Thông báo</h2>
+      {items.map(it=> (
+        <div key={it._id} style={{border:'1px solid #eee', padding:12, marginBottom:8}}>
+          <div>{it.type}</div>
+          <div>{it.payload?.text}</div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+- Backend: API mẫu `notifications` + socket emit
+
+// notifications.controller.js (preview)
+import Notification from '../models/notification.model.js';
+
+export async function listNotifications(req,res){
+  const userId = req.auth?.userId;
+  const items = await Notification.find({userId}).sort({createdAt:-1}).limit(50);
+  res.json(items);
+}
+
+export async function createNotificationForUser(userId, payload, io){
+  const doc = await Notification.create({userId, type:payload.type, payload, read:false});
+  io.to(userId).emit('notification:new', doc);
+  return doc;
+}
+
+7. Áp dụng Model (liệt kê các Model sử dụng)
+- Notification model: `_id, userId, type, payload, read, createdAt`
+- Invite model: `_id, fromUserId, toUserId, status, meta, createdAt`
+- User model (hiện có)
+- Message / Conversation (hiện có)
+- AI Agent model: `AgentPrompt`, `Embedding` store (nếu dùng RAG)
+
+8. Hướng dẫn nhanh sử dụng IDE (MCP / Test / Debug)
+- Chạy backend trong VSCode: `npm run dev` (root `backend`)
+- Debug: tạo launch config attach to Node, set breakpoints trong `server.js` và controllers
+- Test backend: `npm test` (backend) — Jest
+- Sử dụng MCP: mở file, chạy unit tests thông qua Test Explorer, sử dụng git staging/commit via Source Control
+
+9. Kịch bản UI (dành cho chấm điểm)
+- Màn hình: Notifications (nền trắng)
+- Kịch bản: User A gửi invite → Backend lưu `Invite` + tạo `Notification` → Worker/Inngest gọi `createNotificationForUser` → Socket emit `notification:new` → Client hiện popup + thêm vào `NotificationList`.
+- Tool UX/UI liên kết: component props cho `InviteCard` (accept/decline) gọi API `/api/invites/:id/accept` và emit kết quả realtime.
+
+10. File nộp & Ghi chú
+- Tên file: webdating_ai_agent.docx (bản này)
+- Nếu cần bản Word thật, tôi có thể tạo file `.docx` thực thi bằng script Python (`python-docx`) hoặc xuất PDF. Bạn muốn tôi xuất PDF thay vì .docx thật không?
+
+-- Hết --

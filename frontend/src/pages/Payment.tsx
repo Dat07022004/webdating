@@ -1,13 +1,12 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
 import { ArrowLeft, CreditCard, Lock, Check, Crown, Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { Navbar } from "@/components/layout/Navbar";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { useToast } from "@/hooks/use-toast";
+import { useAuth } from "@clerk/clerk-react";
 
 const planDetails = {
   gold: {
@@ -30,61 +29,111 @@ const Payment = () => {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const { toast } = useToast();
+  const { getToken } = useAuth();
   const planId = searchParams.get("plan") as keyof typeof planDetails || "gold";
   const plan = planDetails[planId] || planDetails.gold;
-
-  const [formData, setFormData] = useState({
-    cardNumber: "",
-    cardName: "",
-    expiry: "",
-    cvv: "",
-  });
   const [isProcessing, setIsProcessing] = useState(false);
 
-  const formatCardNumber = (value: string) => {
-    const v = value.replace(/\s+/g, "").replace(/[^0-9]/gi, "");
-    const matches = v.match(/\d{4,16}/g);
-    const match = (matches && matches[0]) || "";
-    const parts = [];
-    for (let i = 0, len = match.length; i < len; i += 4) {
-      parts.push(match.substring(i, i + 4));
-    }
-    return parts.length ? parts.join(" ") : value;
-  };
+  useEffect(() => {
+    const resultCode = searchParams.get("resultCode");
+    if (!resultCode) return;
 
-  const formatExpiry = (value: string) => {
-    const v = value.replace(/\s+/g, "").replace(/[^0-9]/gi, "");
-    if (v.length >= 2) {
-      return v.substring(0, 2) + "/" + v.substring(2, 4);
-    }
-    return v;
-  };
+    const confirmReturn = async () => {
+      setIsProcessing(true);
 
-  const handleInputChange = (field: string, value: string) => {
-    if (field === "cardNumber") {
-      value = formatCardNumber(value);
-    } else if (field === "expiry") {
-      value = formatExpiry(value.replace("/", ""));
-    } else if (field === "cvv") {
-      value = value.replace(/[^0-9]/g, "").substring(0, 4);
-    }
-    setFormData((prev) => ({ ...prev, [field]: value }));
-  };
+      try {
+        const baseUrl = import.meta.env.VITE_API_URL
+          ? import.meta.env.VITE_API_URL.replace(/\/$/, "")
+          : "http://localhost:3000";
+
+        const token = await getToken();
+        const payload = Object.fromEntries(searchParams.entries());
+
+        const res = await fetch(`${baseUrl}/api/premium/momo-return`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          },
+          body: JSON.stringify(payload),
+        });
+
+        const data = await res.json();
+        if (!res.ok) {
+          throw new Error(data?.message || "Failed to confirm payment");
+        }
+
+        if (data?.status === "success" || resultCode === "0") {
+          toast({
+            title: "Payment Successful! 🎉",
+            description: `Welcome to ${plan.name}! Your premium features are now active.`,
+          });
+          navigate("/discover");
+          return;
+        }
+
+        toast({
+          title: "Payment Failed",
+          description: "Your payment did not complete. Please try again.",
+          variant: "destructive",
+        });
+      } catch (error) {
+        toast({
+          title: "Payment Confirmation Error",
+          description: error instanceof Error ? error.message : "Unable to verify payment",
+          variant: "destructive",
+        });
+      } finally {
+        setIsProcessing(false);
+      }
+    };
+
+    confirmReturn();
+  }, [getToken, navigate, plan.name, searchParams, toast]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsProcessing(true);
-    
-    // Simulate payment processing
-    await new Promise((resolve) => setTimeout(resolve, 2000));
-    
-    toast({
-      title: "Payment Successful! 🎉",
-      description: `Welcome to ${plan.name}! Your premium features are now active.`,
-    });
-    
-    setIsProcessing(false);
-    navigate("/discover");
+
+    try {
+      const token = await getToken();
+      if (!token) {
+        toast({
+          title: "Authentication required",
+          description: "Please sign in before purchasing a plan.",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      const baseUrl = import.meta.env.VITE_API_URL
+        ? import.meta.env.VITE_API_URL.replace(/\/$/, "")
+        : "http://localhost:3000";
+
+      const res = await fetch(`${baseUrl}/api/premium/create-payment`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ plan: planId }),
+      });
+
+      const data = await res.json();
+      if (!res.ok || !data?.payUrl) {
+        throw new Error(data?.message || "Failed to start payment");
+      }
+
+      window.location.href = data.payUrl;
+    } catch (error) {
+      toast({
+        title: "Payment Error",
+        description: error instanceof Error ? error.message : "Unable to create payment",
+        variant: "destructive",
+      });
+    } finally {
+      setIsProcessing(false);
+    }
   };
 
   return (
@@ -164,7 +213,7 @@ const Payment = () => {
               </div>
             </motion.div>
 
-            {/* Payment Form */}
+            {/* Payment Action */}
             <motion.div
               initial={{ opacity: 0, x: 20 }}
               animate={{ opacity: 1, x: 0 }}
@@ -179,69 +228,9 @@ const Payment = () => {
                 </CardHeader>
                 <CardContent>
                   <form onSubmit={handleSubmit} className="space-y-4">
-                    <div className="space-y-2">
-                      <Label htmlFor="cardNumber">Card Number</Label>
-                      <Input
-                        id="cardNumber"
-                        placeholder="1234 5678 9012 3456"
-                        value={formData.cardNumber}
-                        onChange={(e) => handleInputChange("cardNumber", e.target.value)}
-                        maxLength={19}
-                        required
-                      />
-                    </div>
-
-                    <div className="space-y-2">
-                      <Label htmlFor="cardName">Cardholder Name</Label>
-                      <Input
-                        id="cardName"
-                        placeholder="John Doe"
-                        value={formData.cardName}
-                        onChange={(e) => handleInputChange("cardName", e.target.value)}
-                        required
-                      />
-                    </div>
-
-                    <div className="grid grid-cols-2 gap-4">
-                      <div className="space-y-2">
-                        <Label htmlFor="expiry">Expiry Date</Label>
-                        <Input
-                          id="expiry"
-                          placeholder="MM/YY"
-                          value={formData.expiry}
-                          onChange={(e) => handleInputChange("expiry", e.target.value)}
-                          maxLength={5}
-                          required
-                        />
-                      </div>
-                      <div className="space-y-2">
-                        <Label htmlFor="cvv">CVV</Label>
-                        <Input
-                          id="cvv"
-                          type="password"
-                          placeholder="123"
-                          value={formData.cvv}
-                          onChange={(e) => handleInputChange("cvv", e.target.value)}
-                          maxLength={4}
-                          required
-                        />
-                      </div>
-                    </div>
-
-                    {/* Card Icons */}
-                    <div className="flex items-center gap-2 py-2">
-                      <div className="flex gap-1">
-                        <div className="w-10 h-6 bg-gradient-to-r from-blue-600 to-blue-800 rounded text-white text-[8px] flex items-center justify-center font-bold">VISA</div>
-                        <div className="w-10 h-6 bg-gradient-to-r from-red-500 to-yellow-500 rounded flex items-center justify-center">
-                          <div className="flex -space-x-1">
-                            <div className="w-3 h-3 rounded-full bg-red-500"></div>
-                            <div className="w-3 h-3 rounded-full bg-yellow-400"></div>
-                          </div>
-                        </div>
-                        <div className="w-10 h-6 bg-gradient-to-r from-blue-400 to-blue-600 rounded text-white text-[6px] flex items-center justify-center font-bold">AMEX</div>
-                      </div>
-                      <span className="text-xs text-muted-foreground ml-auto">We accept all major cards</span>
-                    </div>
+                    <p className="text-sm text-muted-foreground">
+                      You will be redirected to MoMo to complete the payment securely.
+                    </p>
 
                     <Button
                       type="submit"
@@ -258,7 +247,7 @@ const Payment = () => {
                       ) : (
                         <>
                           <Lock className="w-4 h-4 mr-2" />
-                          Pay ${plan.price.toFixed(2)}
+                          Pay with MoMo
                         </>
                       )}
                     </Button>

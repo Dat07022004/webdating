@@ -94,8 +94,58 @@ export async function suggestAppointments({ userId, category, budget, date }) {
   return suggestions.slice(0, 3);
 }
 
+/**
+ * Validate booking rules before creating an appointment.
+ * - selectedTime must not be in the past
+ * - user must not already have an active (pending/confirmed/scheduled) appointment
+ * Returns true when valid, otherwise throws an Error with a Vietnamese message.
+ */
+export async function validateBooking({ userId, selectedTime }) {
+  if (!userId) throw new Error('Missing userId');
+  if (!selectedTime) throw new Error('Missing selectedTime');
+
+  const sel = new Date(selectedTime);
+  if (Number.isNaN(sel.getTime())) throw new Error('Invalid selectedTime');
+
+  const now = new Date();
+  // If selected time is strictly before now -> reject
+  if (sel.getTime() < now.getTime()) {
+    const err = new Error('Không thể chọn thời gian trong quá khứ');
+    err.status = 400;
+    throw err;
+  }
+
+  // Check for existing active appointments for this user.
+  // Treat appointments with status 'cancelled' or 'completed' as inactive.
+  // Any appointment not cancelled/completed and with endTime in future (or no endTime) is considered active.
+  const activeStatuses = { $nin: ['cancelled', 'completed'] };
+
+  const clause = {
+    userId: mongoose.Types.ObjectId(userId),
+    status: activeStatuses,
+  };
+
+  // also ensure it's not a past appointment by checking endTime > now or endTime missing
+  clause.$or = [
+    { endTime: { $gt: now } },
+    { endTime: { $exists: false } },
+  ];
+
+  const existing = await Appointment.findOne(clause).lean();
+  if (existing) {
+    const err = new Error('Bạn đang có một lịch hẹn chưa hoàn thành');
+    err.status = 409;
+    throw err;
+  }
+
+  return true;
+}
+
 export async function createAppointment({ userId, locationId, startTime, totalCost }) {
   if (!userId || !locationId || !startTime) throw new Error('Missing required fields');
+
+  // Validate booking before proceeding
+  await validateBooking({ userId, selectedTime: startTime });
 
   const start = new Date(startTime);
   if (Number.isNaN(start.getTime())) throw new Error('Invalid startTime');

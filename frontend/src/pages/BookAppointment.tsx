@@ -46,6 +46,10 @@ const BookAppointment = () => {
   const { toast } = useToast();
   const { userId } = useAuth();
 
+  // Use start of today so the calendar treats today as selectable
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
   const [budget, setBudget] = useState<number | "">("");
   const [category, setCategory] = useState<string>("all");
   const [suggestions, setSuggestions] = useState<any[]>([]);
@@ -293,7 +297,7 @@ const BookAppointment = () => {
                         mode="single"
                         selected={date}
                         onSelect={setDate}
-                        disabled={(d) => d < new Date()}
+                        disabled={(d) => d < today}
                         initialFocus
                         className={cn("p-3 pointer-events-auto")}
                       />

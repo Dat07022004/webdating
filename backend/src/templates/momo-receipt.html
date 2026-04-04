@@ -1,0 +1,97 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>MoMo Payment Receipt</title>
+  </head>
+  <body style="margin:0; padding:0; background-color:#F9F6F2; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, Helvetica, sans-serif;">
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color:#F9F6F2;">
+      <tr>
+        <td align="center" style="padding:32px 16px;">
+          <table role="presentation" width="640" cellpadding="0" cellspacing="0" style="max-width:640px; width:100%; background:#FFFFFF; border-radius:16px; overflow:hidden; border:1px solid #F0E7E1;">
+            <!-- Header -->
+            <tr>
+              <td style="padding:24px 28px; background:linear-gradient(135deg,#F06B6B,#F3A26D);">
+                <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
+                  <tr>
+                    <td align="left" style="color:#FFFFFF; font-size:20px; font-weight:700;">
+                      {{brandName}}
+                    </td>
+                    <td align="right" style="color:#FFFFFF; font-size:12px;">
+                      Receipt • {{transactionDate}}
+                    </td>
+                  </tr>
+                </table>
+              </td>
+            </tr>
+
+            <!-- Hero -->
+            <tr>
+              <td style="padding:28px;">
+                <div style="color:#3B2F2F;">
+                  <div style="font-size:18px; font-weight:700; margin-bottom:6px;">Payment Successful</div>
+                  <div style="font-size:13px; color:#7A6A63;">Thank you, {{customerName}}. Your {{planName}} plan is now active.</div>
+                </div>
+
+                <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-top:18px; border-radius:12px; background:#FFF7F3; border:1px solid #F4D8D1;">
+                  <tr>
+                    <td style="padding:16px 18px;">
+                      <div style="font-size:12px; color:#7A6A63; margin-bottom:4px;">Total Paid</div>
+                      <div style="font-size:26px; font-weight:700; color:#E06B6B;">{{amount}} {{currency}}</div>
+                      <div style="font-size:12px; color:#7A6A63; margin-top:6px;">Method: MoMo ({{payType}})</div>
+                    </td>
+                  </tr>
+                </table>
+              </td>
+            </tr>
+
+            <!-- Transaction Details -->
+            <tr>
+              <td style="padding:0 28px 20px;">
+                <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border:1px solid #F0E7E1; border-radius:12px;">
+                  <tr>
+                    <td style="padding:14px 16px; font-size:14px; font-weight:700; color:#3B2F2F; background:#FAF6F3;">
+                      Transaction Details
+                    </td>
+                  </tr>
+                  <tr>
+<td align="right" style="padding:6px 0;">{{startDate}}</td>
+                        </tr>
+                        <tr>
+                          <td style="padding:6px 0; color:#7A6A63;">Next Renewal</td>
+                          <td align="right" style="padding:6px 0;">{{renewDate}}</td>
+                        </tr>
+                      </table>
+                    </td>
+                  </tr>
+                </table>
+              </td>
+            </tr>
+
+            <!-- CTA -->
+            <tr>
+              <td align="center" style="padding:0 28px 28px;">
+                <a href="{{managePlanUrl}}" style="display:inline-block; background:#E06B6B; color:#FFFFFF; text-decoration:none; font-size:14px; font-weight:600; padding:12px 20px; border-radius:10px;">
+                  Manage Your Plan
+                </a>
+              </td>
+            </tr>
+
+            <!-- Footer -->
+            <tr>
+              <td style="padding:18px 28px 28px; background:#FAF6F3;">
+                <div style="font-size:12px; color:#7A6A63; line-height:1.5;">
+                  If you did not make this payment, contact <a href="mailto:{{supportEmail}}" style="color:#E06B6B; text-decoration:none;">{{supportEmail}}</a>.
+                  <br />
+                  © {{year}} {{brandName}} • All rights reserved.
+                </div>
+              </td>
+            </tr>
+
+          </table>
+        </td>
+      </tr>
+    </table>
+  </body>
+</html>
