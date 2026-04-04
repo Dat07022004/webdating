@@ -14,6 +14,7 @@ import {
   Plus,
   Star,
   Trash2,
+  Ban,
 } from "lucide-react";
 import { Layout } from "@/components/layout/Layout";
 import { Button } from "@/components/ui/button";
@@ -31,6 +32,7 @@ import { UserButton, useClerk, useUser, useAuth } from "@clerk/clerk-react";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
+import { BlockListDialog } from "@/components/BlockListDialog";
 
 type ProfilePhoto = {
   url: string;
@@ -88,9 +90,10 @@ const emptyProfile: ProfileData = {
 };
 
 const menuItems = [
-  { icon: Edit3, label: "Edit Profile", href: "#" },
+  { icon: Edit3, label: "Edit Profile", action: "edit" },
   { icon: Settings, label: "Account Settings", href: "#" },
   { icon: Bell, label: "Notifications", href: "/notifications" },
+  { icon: Ban, label: "Block list", action: "blocklist" },
   { icon: Shield, label: "Privacy & Safety", href: "#" },
   { icon: HelpCircle, label: "Help & Support", href: "#" },
 ];
@@ -122,6 +125,7 @@ export default function Profile() {
   const [isLocating, setIsLocating] = useState(false);
   const [locationError, setLocationError] = useState("");
   const [coordinates, setCoordinates] = useState<{ lat: number; lng: number } | null>(null);
+  const [isBlockListOpen, setIsBlockListOpen] = useState(false);
 
   const activeProfile = isEditing ? draft : profile;
 
@@ -1044,7 +1048,13 @@ export default function Profile() {
           >
             {menuItems.map((item, i) => (
               <div key={item.label}>
-                <button className="w-full p-4 flex items-center gap-3 hover:bg-secondary/50 transition-colors">
+                <button 
+                  onClick={() => {
+                    if (item.action === "edit") setIsEditing(true);
+                    else if (item.action === "blocklist") setIsBlockListOpen(true);
+                  }}
+                  className="w-full p-4 flex items-center gap-3 hover:bg-secondary/50 transition-colors"
+                >
                   <item.icon className="w-5 h-5 text-muted-foreground" />
                   <span className="flex-1 text-left text-foreground">{item.label}</span>
                   <ChevronRight className="w-5 h-5 text-muted-foreground" />
@@ -1071,6 +1081,11 @@ export default function Profile() {
           </motion.div>
         </div>
       </div>
+
+      <BlockListDialog
+        isOpen={isBlockListOpen}
+        onClose={() => setIsBlockListOpen(false)}
+      />
     </Layout>
   );
 }

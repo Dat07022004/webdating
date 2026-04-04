@@ -2,14 +2,10 @@ import express from 'express';
 import { getConversations, getMessages, createConversation, markConversationAsSeen } from '../controllers/chat.controller.js';
 import { requireAuth } from '@clerk/express'; // ensure user is authed
 import { ENV } from '../config/env.js';
+import { resolveAuthContext } from '../middleware/auth.middleware.js';
 
 const authMiddleware = ENV.NODE_ENV === 'production' ? requireAuth() : (_req, _res, next) => next();
 const router = express.Router().use(authMiddleware);
-
-const resolveAuthContext = (req) => {
-    const auth = typeof req.auth === 'function' ? req.auth() : req.auth;
-    return auth || null;
-};
 
 const resolveClerkId = (req, auth) => req.user?.clerkId || auth?.userId || (ENV.NODE_ENV === 'production' ? undefined : req.headers?.['x-clerk-id'] || req.query?.clerkId || req.body?.clerkId);
 

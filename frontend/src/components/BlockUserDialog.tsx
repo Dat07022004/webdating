@@ -1,46 +1,61 @@
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
-import { ShieldOff } from "lucide-react";
-import { useToast } from "@/hooks/use-toast";
+import { Ban, AlertCircle } from "lucide-react";
 
 interface BlockUserDialogProps {
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-  userName: string;
+  isOpen: boolean;
+  onClose: () => void;
+  targetUser: { id: string; name: string };
+  onConfirm: () => void;
 }
 
-export const BlockUserDialog = ({ open, onOpenChange, userName }: BlockUserDialogProps) => {
-  const { toast } = useToast();
-
-  const handleBlock = () => {
-    toast({ title: `${userName} blocked`, description: "They won't be able to see your profile or contact you." });
-    onOpenChange(false);
-  };
-
+export function BlockUserDialog({ isOpen, onClose, targetUser, onConfirm }: BlockUserDialogProps) {
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-sm">
-        <DialogHeader>
-          <DialogTitle className="font-serif flex items-center gap-2">
-            <ShieldOff className="w-5 h-5 text-destructive" />
-            Block {userName}?
+    <Dialog open={isOpen} onOpenChange={onClose}>
+      <DialogContent className="sm:max-w-[400px] rounded-3xl border-none bg-card p-6 shadow-2xl">
+        <DialogHeader className="items-center text-center">
+          <div className="mb-2 flex h-12 w-12 items-center justify-center rounded-full bg-destructive/10 text-destructive">
+            <Ban className="h-6 w-6" />
+          </div>
+          <DialogTitle className="text-xl font-bold text-foreground">
+            Block {targetUser.name}?
           </DialogTitle>
-          <DialogDescription className="space-y-2">
-            <span className="block">Blocking {userName} will:</span>
-            <ul className="list-disc list-inside text-sm space-y-1">
-              <li>Remove them from your matches</li>
-              <li>Prevent them from messaging you</li>
-              <li>Hide your profile from them</li>
-              <li>Cancel any pending dates</li>
-            </ul>
-            <span className="block text-xs">This action can be undone from your settings.</span>
-          </DialogDescription>
         </DialogHeader>
-        <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
-          <Button variant="destructive" onClick={handleBlock}>Block User</Button>
+
+        <div className="my-4 space-y-4">
+          <div className="rounded-2xl bg-muted/50 p-4 border border-border/50">
+            <p className="text-sm font-semibold mb-2 flex items-center gap-2">
+              <AlertCircle className="w-4 h-4 text-destructive" />
+              When you block this user:
+            </p>
+            <ul className="text-xs text-muted-foreground space-y-2 list-disc pl-4">
+              <li>They will be removed from your <strong>Matches</strong>.</li>
+              <li>You won't be able to send messages to each other.</li>
+              <li>Neither of you will see each other's profiles in <strong>Discover</strong>.</li>
+            </ul>
+          </div>
+        </div>
+
+        <DialogFooter className="flex-col gap-2">
+          <Button
+            variant="destructive"
+            onClick={() => {
+              onConfirm();
+              onClose();
+            }}
+            className="w-full rounded-xl font-bold shadow-lg shadow-destructive/20 active:scale-95 transition-transform"
+          >
+            Confirm Block
+          </Button>
+          <Button
+            variant="ghost"
+            onClick={onClose}
+            className="w-full rounded-xl font-medium text-muted-foreground hover:bg-muted"
+          >
+            Cancel
+          </Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
   );
-};
+}

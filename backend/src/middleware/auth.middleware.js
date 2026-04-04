@@ -1,10 +1,11 @@
 import { User } from '../models/user.model.js';
 import { ENV } from '../config/env.js';
 import { isUserActivelyBanned } from '../services/admin.service.js';
+import { getAuth } from '@clerk/express';
 
 export const resolveAuthContext = (req) => {
     try {
-        const auth = typeof req.auth === 'function' ? req.auth() : req.auth;
+        const auth = getAuth(req);
         return auth || null;
     } catch (error) {
         if (ENV.NODE_ENV !== 'production') {
@@ -48,12 +49,19 @@ const resolveActiveUserByClerkId = async (clerkId) => {
 export const requireActiveUser = async (req, res, next) => {
     try {
         const auth = resolveAuthContext(req);
-        const jwt = resolveJwtFromRequest(req);
-        console.log('JWT:', jwt || '(missing)');
-        // Allow fallback primarily for dev testing
-        const clerkId = resolveClerkIdFromRequest(req, auth);
+        
+        // Use auth.userId if available, otherwise check headers for dev fallback
+        let clerkId = auth?.userId;
+        
+        if (!clerkId && ENV.NODE_ENV !== 'production') {
+            clerkId = req.headers?.['x-clerk-id'] || req.body?.clerkId || req.query?.clerkId;
+            if (clerkId) {
+                console.log('Dev Fallback: Using clerkId from headers/body:', clerkId);
+            }
+        }
 
         if (!clerkId) {
+            console.log('Auth Failure: No userId in auth context and no fallback found');
             return res.status(401).json({ message: 'Unauthorized: No valid session' });
         }
 
