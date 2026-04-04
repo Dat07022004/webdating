@@ -19,7 +19,10 @@ import DateSpots from "./pages/DateSpots";
 import BookAppointment from "./pages/BookAppointment";
 import Appointments from "./pages/Appointments";
 import DateReview from "./pages/DateReview";
+import AdminDashboard from "./pages/AdminDashboard";
+import RevenueDashboard from "./pages/RevenueDashboard";
 import NotFound from "./pages/NotFound";
+import { SocketNotificationListener } from "./components/SocketNotificationListener";
 
 const queryClient = new QueryClient();
 
@@ -36,6 +39,7 @@ const App = () => (
       <Toaster />
       <Sonner />
       <BrowserRouter>
+        <SocketNotificationListener />
         <Routes>
           <Route path="/" element={<Landing />} />
           <Route path="/login" element={<Login />} />
@@ -52,6 +56,9 @@ const App = () => (
           <Route path="/appointments/book" element={<ProtectedRoute><BookAppointment /></ProtectedRoute>} />
           <Route path="/appointments" element={<ProtectedRoute><Appointments /></ProtectedRoute>} />
           <Route path="/review/:id" element={<ProtectedRoute><DateReview /></ProtectedRoute>} />
+          <Route path="/admin" element={<ProtectedRoute><AdminDashboard /></ProtectedRoute>} />
+          <Route path="/revenue/overview" element={<ProtectedRoute><RevenueDashboard /></ProtectedRoute>} />
+          <Route path="/manager/revenue" element={<ProtectedRoute><RevenueDashboard /></ProtectedRoute>} />
           <Route path="*" element={<NotFound />} />
         </Routes>
       </BrowserRouter>

@@ -12,6 +12,13 @@ const geoPointSchema = new mongoose.Schema({
     }
 }, { _id: false });
 
+const profilePhotoSchema = new mongoose.Schema({
+    url: { type: String, required: true },
+    publicId: { type: String, default: '' },
+    isPrimary: { type: Boolean, default: false },
+    uploadedAt: { type: Date, default: Date.now }
+}, { _id: false });
+
 const userSchema = new mongoose.Schema({
     clerkId: { type: String, unique: true, sparse: true, index: true },
     email: {
@@ -29,12 +36,22 @@ const userSchema = new mongoose.Schema({
         required: true,
         unique: true
     },
+    role: {
+        type: String,
+        enum: ['admin', 'manager', 'user'],
+        default: 'user'
+    },
     isVerified: { type: Boolean, default: false },
     profile: {
         avatarUrl: { type: String, default: '' },
+        photos: {
+            type: [profilePhotoSchema],
+            default: []
+        },
         bio: { type: String, default: '' },
         personalInfo: {
             name: String,
+            birthday: Date,
             age: Number,
             gender: String,
             locationText: String,
@@ -80,6 +97,14 @@ const userSchema = new mongoose.Schema({
         privacyPref: { type: Boolean, default: true },
         allowVideoCall: { type: Boolean, default: true },
         allowGeoDiscovery: { type: Boolean, default: true }
+    },
+    premiumPlan: {
+        type: {
+            type: String,
+            enum: ['none', 'gold', 'platinum'],
+            default: 'none'
+        },
+        expiresAt: { type: Date, default: null }
     },
     status: {
         online: { type: Boolean, default: false },

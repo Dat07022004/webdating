@@ -1,79 +1,284 @@
-import { useState } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { Link, useLocation } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
-import { Heart, MessageCircle, Bell, User, Menu, X, Sparkles, MapPin, CalendarDays } from "lucide-react";
+import {
+  Heart,
+  MessageCircle,
+  Bell,
+  User,
+  Menu,
+  X,
+  Sparkles,
+  MapPin,
+  CalendarDays,
+  Zap,
+  Crown,
+  Shield,
+  BarChart3,
+  ChevronDown,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
+import { useAuth } from "@clerk/clerk-react";
+import { useQuery } from "@tanstack/react-query";
 
 interface NavbarProps {
   isAuthenticated?: boolean;
 }
 
+interface NavLinkItem {
+  to: string;
+  label: string;
+  icon: React.ComponentType<{ className?: string }>;
+  badge?: number;
+}
+
 export const Navbar = ({ isAuthenticated = false }: NavbarProps) => {
   const [isOpen, setIsOpen] = useState(false);
+  const [scrolled, setScrolled] = useState(false);
+  const [desktopPrimaryCount, setDesktopPrimaryCount] = useState(6);
   const location = useLocation();
+  const { getToken } = useAuth();
+  const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000';
 
-  const navLinks = isAuthenticated
-    ? [
-        { to: "/discover", label: "Discover", icon: Sparkles },
-        { to: "/matches", label: "Matches", icon: Heart },
-        { to: "/messages", label: "Chat", icon: MessageCircle, badge: 3 },
-        { to: "/date-spots", label: "Date Spots", icon: MapPin },
-        { to: "/appointments", label: "Appointments", icon: CalendarDays },
-        { to: "/notifications", label: "Notifications", icon: Bell, badge: 5 },
-        { to: "/profile", label: "Profile", icon: User },
-      ]
-    : [];
+  const { data: userProfile } = useQuery({
+    queryKey: ["userProfileNav"],
+    queryFn: async () => {
+      if (!isAuthenticated) return null;
+      const token = await getToken();
+      const res = await fetch(`${API_URL}/api/users/me`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) return null;
+      const data = await res.json();
+      return data.profile;
+    },
+    enabled: isAuthenticated,
+    staleTime: Infinity,
+  });
+
+  const isAdmin = userProfile?.role === "admin";
+  const isManager = userProfile?.role === "manager";
+
+  const { data: unreadCounts } = useQuery({
+    queryKey: ["unread-counts"],
+    queryFn: async () => {
+      const token = await getToken();
+      const res = await fetch(`${API_URL}/api/notifications/unread-counts`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      if (!res.ok) return null;
+      return await res.json();
+    },
+    enabled: isAuthenticated,
+    refetchInterval: 60000,
+  });
+
+  useEffect(() => {
+    const handleScroll = () => setScrolled(window.scrollY > 20);
+    window.addEventListener("scroll", handleScroll);
+    return () => window.removeEventListener("scroll", handleScroll);
+  }, []);
+
+  useEffect(() => {
+    const updateDesktopPrimaryCount = () => {
+      if (window.innerWidth >= 1536) {
+        setDesktopPrimaryCount(6);
+      } else if (window.innerWidth >= 1280) {
+        setDesktopPrimaryCount(5);
+      } else {
+        setDesktopPrimaryCount(4);
+      }
+    };
+
+    updateDesktopPrimaryCount();
+    window.addEventListener("resize", updateDesktopPrimaryCount);
+    return () => window.removeEventListener("resize", updateDesktopPrimaryCount);
+  }, []);
+
+  useEffect(() => {
+    setIsOpen(false);
+  }, [location.pathname]);
+
+  const allPrimaryNavLinks = useMemo<NavLinkItem[]>(() => {
+    if (!isAuthenticated) return [];
+
+    return [
+      { to: "/discover", label: "Discover", icon: Sparkles },
+      { to: "/matches", label: "Matches", icon: Heart },
+      { to: "/messages", label: "Chat", icon: MessageCircle, badge: unreadCounts?.messageCount },
+      { to: "/date-spots", label: "Date Spots", icon: MapPin },
+      { to: "/appointments", label: "Dates", icon: CalendarDays },
+      { to: "/notifications", label: "Activity", icon: Bell, badge: unreadCounts?.notificationCount },
+    ];
+  }, [isAuthenticated, unreadCounts?.messageCount, unreadCounts?.notificationCount]);
+
+  const accountNavLinks = useMemo<NavLinkItem[]>(() => {
+    if (!isAuthenticated) return [];
+
+    return [
+      { to: "/premium", label: "Premium", icon: Crown },
+      { to: "/profile", label: "Profile", icon: User },
+    ];
+  }, [isAuthenticated]);
+
+  const roleNavLinks = useMemo<NavLinkItem[]>(() => {
+    if (!isAuthenticated) return [];
+
+    const links: NavLinkItem[] = [];
+
+    if (isAdmin) {
+      links.push({ to: "/admin", label: "Admin", icon: Shield });
+      links.push({ to: "/revenue/overview", label: "Revenue", icon: BarChart3 });
+    }
+    if (isManager && !isAdmin) {
+      links.push({ to: "/revenue/overview", label: "Revenue", icon: BarChart3 });
+    }
+
+    return links;
+  }, [isAuthenticated, isAdmin, isManager]);
+
+  const primaryNavLinks = useMemo(
+    () => allPrimaryNavLinks.slice(0, desktopPrimaryCount),
+    [allPrimaryNavLinks, desktopPrimaryCount],
+  );
+
+  const moreNavLinks = useMemo(() => {
+    const overflowPrimaryLinks = allPrimaryNavLinks.slice(desktopPrimaryCount);
+    return [...overflowPrimaryLinks, ...accountNavLinks, ...roleNavLinks];
+  }, [allPrimaryNavLinks, desktopPrimaryCount, accountNavLinks, roleNavLinks]);
+
+  const navLinks = useMemo(() => [...primaryNavLinks, ...moreNavLinks], [primaryNavLinks, moreNavLinks]);
+
+  const isMoreActive = useMemo(
+    () => moreNavLinks.some((link) => location.pathname === link.to),
+    [moreNavLinks, location.pathname],
+  );
 
   return (
-    <nav className="fixed top-0 left-0 right-0 z-50 bg-background/80 backdrop-blur-lg border-b border-border">
-      <div className="container mx-auto px-4">
-        <div className="flex items-center justify-between h-16">
+    <nav className="sticky top-2 sm:top-3 z-50 px-3 sm:px-4 lg:px-6 py-2">
+      <div
+        className={cn(
+          "max-w-[1240px] mx-auto bg-white/85 backdrop-blur-2xl border border-white/70 shadow-[0_10px_34px_rgba(15,23,42,0.08)] transition-all duration-400",
+          scrolled ? "rounded-[1.75rem]" : "rounded-[2.25rem]",
+        )}
+      >
+        <div
+          className={cn(
+            "flex items-center gap-3 transition-all duration-300",
+            scrolled ? "h-14 px-3 sm:px-4 lg:px-5" : "h-16 px-3 sm:px-5 lg:px-6",
+          )}
+        >
           {/* Logo */}
-          <Link to="/" className="flex items-center gap-2">
-            <div className="w-10 h-10 rounded-xl gradient-primary flex items-center justify-center shadow-md">
-              <Heart className="w-5 h-5 text-primary-foreground" />
+          <Link to="/" className="flex items-center gap-3 group shrink-0">
+            <div className="relative w-10 h-10 rounded-[1rem] bg-gradient-to-br from-[#FF4D8D] via-[#FF6D7B] to-[#FF8E53] flex items-center justify-center shadow-[0_8px_18px_rgba(255,77,141,0.35)] group-hover:rotate-6 group-hover:scale-105 transition-all duration-300">
+              <Heart className="w-5 h-5 text-white fill-white" />
+              <span className="absolute inset-0 rounded-[1rem] bg-white/30 opacity-0 blur-md transition-opacity duration-300 group-hover:opacity-100" />
             </div>
-            <span className="font-serif text-xl font-semibold text-foreground">Heartly</span>
+            <div className="leading-tight">
+              <p className="font-sans text-[2rem] sm:text-[2.1rem] font-black text-slate-900 tracking-tight">
+                VibeMatch
+              </p>
+            </div>
           </Link>
 
           {/* Desktop Navigation */}
           {isAuthenticated && (
-            <div className="hidden md:flex items-center gap-1">
-              {navLinks.map((link) => {
-                const isActive = location.pathname === link.to;
-                return (
-                  <Link key={link.to} to={link.to}>
-                    <Button
-                      variant="ghost"
-                      className={cn(
-                        "relative",
-                        isActive && "bg-coral-light text-coral-dark"
-                      )}
-                    >
-                      <link.icon className="w-5 h-5" />
-                      <span className="hidden lg:inline">{link.label}</span>
-                      {link.badge && (
-                        <Badge className="absolute -top-1 -right-1 h-5 w-5 p-0 flex items-center justify-center gradient-primary text-[10px] border-0">
-                          {link.badge}
-                        </Badge>
-                      )}
-                    </Button>
-                  </Link>
-                );
-              })}
+            <div className="hidden md:flex flex-1 min-w-0 justify-center">
+              <div className="rounded-full bg-slate-50/50 p-1 border border-slate-100 flex items-center gap-1">
+                {primaryNavLinks.map((link) => {
+                  const isActive = location.pathname === link.to;
+                  return (
+                    <Link key={link.to} to={link.to}>
+                      <Button
+                        variant="ghost"
+                        className={cn(
+                          "relative rounded-full px-4 h-10 font-bold transition-all duration-300 whitespace-nowrap",
+                          isActive 
+                            ? "bg-white text-[#FF4D8D] shadow-sm hover:text-[#FF4D8D]" 
+                            : "text-slate-500 hover:text-slate-800 hover:bg-slate-100/50"
+                        )}
+                      >
+                        <link.icon className={cn("w-4 h-4 mr-2", isActive && "fill-[#FF4D8D]/20")} />
+                        <span className="hidden xl:inline">{link.label}</span>
+                        {link.badge !== undefined && link.badge > 0 && (
+                          <Badge className="absolute -top-1 -right-1 h-5 min-w-5 px-1 flex items-center justify-center bg-gradient-to-r from-[#FF4D8D] to-[#FF8E53] text-[10px] text-white font-black border-2 border-white rounded-full">
+                            {link.badge}
+                          </Badge>
+                        )}
+                      </Button>
+                    </Link>
+                  );
+                })}
+                {moreNavLinks.length > 0 && (
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button
+                        variant="ghost"
+                        className={cn(
+                          "rounded-full px-4 h-10 font-bold transition-all duration-300 whitespace-nowrap",
+                          isMoreActive
+                            ? "bg-white text-[#FF4D8D] shadow-sm hover:text-[#FF4D8D]"
+                            : "text-slate-500 hover:text-slate-800 hover:bg-slate-100/50",
+                        )}
+                      >
+                        More <ChevronDown className="w-4 h-4 ml-1" />
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end" className="w-56 rounded-2xl border-slate-100 p-2">
+                      {moreNavLinks.map((link) => {
+                        const isActive = location.pathname === link.to;
+                        return (
+                          <DropdownMenuItem key={link.to} asChild>
+                            <Link
+                              to={link.to}
+                              className={cn(
+                                "flex items-center gap-2 rounded-xl px-2.5 py-2 font-semibold text-sm",
+                                isActive
+                                  ? "bg-[#FF4D8D]/10 text-[#FF4D8D]"
+                                  : "text-slate-600",
+                              )}
+                            >
+                              <link.icon className="w-4 h-4" />
+                              {link.label}
+                              {link.badge !== undefined && link.badge > 0 && (
+                                <Badge className="ml-auto h-5 min-w-5 px-1 flex items-center justify-center bg-gradient-to-r from-[#FF4D8D] to-[#FF8E53] text-[10px] text-white border-0 rounded-full">
+                                  {link.badge}
+                                </Badge>
+                              )}
+                            </Link>
+                          </DropdownMenuItem>
+                        );
+                      })}
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                )}
+              </div>
             </div>
           )}
 
           {/* Auth Buttons */}
           {!isAuthenticated && (
-            <div className="hidden md:flex items-center gap-3">
+            <div className="hidden md:flex items-center gap-2 shrink-0 ml-auto">
               <Link to="/login">
-                <Button variant="ghost">Log in</Button>
+                <Button
+                  variant="ghost"
+                  className="rounded-full font-semibold px-5 text-slate-600 hover:text-slate-900 hover:bg-slate-100"
+                >
+                  Log in
+                </Button>
               </Link>
               <Link to="/register">
-                <Button variant="gradient">Get Started</Button>
+                <Button className="rounded-full font-semibold px-5 bg-gradient-to-r from-[#FF4D8D] to-[#FF8E53] text-white border-0 shadow-[0_6px_18px_rgba(255,77,141,0.4)] hover:shadow-[0_10px_24px_rgba(255,142,83,0.5)] hover:-translate-y-0.5 transition-all duration-300">
+                  Get Started <Zap className="w-4 h-4 ml-1.5 fill-white" />
+                </Button>
               </Link>
             </div>
           )}
@@ -82,10 +287,10 @@ export const Navbar = ({ isAuthenticated = false }: NavbarProps) => {
           <Button
             variant="ghost"
             size="icon"
-            className="md:hidden"
+            className="md:hidden ml-auto rounded-full text-slate-600 hover:bg-slate-100"
             onClick={() => setIsOpen(!isOpen)}
           >
-            {isOpen ? <X /> : <Menu />}
+            {isOpen ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
           </Button>
         </div>
       </div>
@@ -94,46 +299,79 @@ export const Navbar = ({ isAuthenticated = false }: NavbarProps) => {
       <AnimatePresence>
         {isOpen && (
           <motion.div
-            initial={{ opacity: 0, height: 0 }}
-            animate={{ opacity: 1, height: "auto" }}
-            exit={{ opacity: 0, height: 0 }}
-            className="md:hidden bg-background border-b border-border"
+            initial={{ opacity: 0, y: -20, scale: 0.95 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: -20, scale: 0.95 }}
+            transition={{ duration: 0.22 }}
+            className="md:hidden mt-2 bg-white/95 backdrop-blur-3xl border border-slate-100 shadow-[0_20px_60px_rgba(0,0,0,0.1)] rounded-[1.5rem] overflow-hidden"
           >
-            <div className="container mx-auto px-4 py-4 space-y-2">
+            <div className="p-4 space-y-2">
               {isAuthenticated ? (
-                navLinks.map((link) => (
+                navLinks.map((link) => {
+                  const isActive = location.pathname === link.to;
+                  return (
+                    <Link
+                      key={link.to}
+                      to={link.to}
+                      onClick={() => setIsOpen(false)}
+                      className="block"
+                    >
+                      <Button
+                        variant="ghost"
+                        className={cn(
+                          "w-full justify-start gap-4 rounded-[1.5rem] h-14 font-bold text-lg",
+                          isActive
+                            ? "bg-[#FF4D8D]/10 text-[#FF4D8D]"
+                            : "text-slate-600",
+                        )}
+                      >
+                        <div
+                          className={cn(
+                            "p-2 rounded-xl",
+                            isActive ? "bg-white shadow-sm" : "bg-slate-100",
+                          )}
+                        >
+                          <link.icon
+                            className={cn(
+                              "w-5 h-5",
+                              isActive && "fill-[#FF4D8D]/20",
+                            )}
+                          />
+                        </div>
+                        {link.label}
+                        {link.badge !== undefined && link.badge > 0 && (
+                          <Badge className="ml-auto bg-[#FF4D8D] shadow-[0_0_10px_rgba(255,77,141,0.5)] text-white border-0 rounded-full px-2">
+                            {link.badge} new
+                          </Badge>
+                        )}
+                      </Button>
+                    </Link>
+                  );
+                })
+              ) : (
+                <div className="flex flex-col gap-3 p-2">
                   <Link
-                    key={link.to}
-                    to={link.to}
+                    to="/login"
                     onClick={() => setIsOpen(false)}
+                    className="w-full"
                   >
                     <Button
-                      variant="ghost"
-                      className="w-full justify-start gap-3"
+                      variant="outline"
+                      className="w-full h-14 rounded-[1.5rem] font-bold text-lg border-2 border-slate-200"
                     >
-                      <link.icon className="w-5 h-5" />
-                      {link.label}
-                      {link.badge && (
-                        <Badge className="ml-auto gradient-primary border-0">
-                          {link.badge}
-                        </Badge>
-                      )}
-                    </Button>
-                  </Link>
-                ))
-              ) : (
-                <>
-                  <Link to="/login" onClick={() => setIsOpen(false)}>
-                    <Button variant="ghost" className="w-full">
                       Log in
                     </Button>
                   </Link>
-                  <Link to="/register" onClick={() => setIsOpen(false)}>
-                    <Button variant="gradient" className="w-full">
-                      Get Started
+                  <Link
+                    to="/register"
+                    onClick={() => setIsOpen(false)}
+                    className="w-full"
+                  >
+                    <Button className="w-full h-14 rounded-[1.5rem] font-bold text-lg bg-gradient-to-r from-[#FF4D8D] to-[#FF8E53] text-white shadow-[0_10px_25px_rgba(255,77,141,0.4)]">
+                      Get Started <Zap className="w-5 h-5 ml-2 fill-white" />
                     </Button>
                   </Link>
-                </>
+                </div>
               )}
             </div>
           </motion.div>

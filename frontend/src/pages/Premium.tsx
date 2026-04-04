@@ -5,6 +5,8 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Badge } from "@/components/ui/badge";
 import { Navbar } from "@/components/layout/Navbar";
 import { useNavigate } from "react-router-dom";
+import { useAuth } from "@clerk/clerk-react";
+import { useEffect, useMemo, useState } from "react";
 
 const plans = [
   {
@@ -83,8 +85,47 @@ const perks = [
 
 const Premium = () => {
   const navigate = useNavigate();
+  const { getToken } = useAuth();
+  const [currentPlan, setCurrentPlan] = useState("basic");
+  const [isLoadingPlan, setIsLoadingPlan] = useState(true);
 
-  const handleSelectPlan = (planId: string) => {
+  const planRank = useMemo(() => ({
+    basic: 0,
+    gold: 1,
+    platinum: 2,
+  }), []);
+
+  useEffect(() => {
+    const loadPlan = async () => {
+      setIsLoadingPlan(true);
+      try {
+        const token = await getToken();
+        if (!token) return;
+
+        const baseUrl = import.meta.env.VITE_API_URL
+          ? import.meta.env.VITE_API_URL.replace(/\/$/, "")
+          : "http://localhost:3000";
+
+        const res = await fetch(`${baseUrl}/api/premium/status`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        const data = await res.json();
+        if (!res.ok) {
+          return;
+        }
+
+        const plan = data?.plan === "gold" || data?.plan === "platinum" ? data.plan : "basic";
+        setCurrentPlan(plan);
+      } finally {
+        setIsLoadingPlan(false);
+      }
+    };
+
+    void loadPlan();
+  }, [getToken]);
+
+  const handleSelectPlan = (planId: string, disabled: boolean) => {
+    if (disabled) return;
     if (planId !== "basic") {
       navigate(`/payment?plan=${planId}`);
     }
@@ -115,7 +156,12 @@ const Premium = () => {
 
         {/* Plans Grid */}
         <div className="grid md:grid-cols-3 gap-6 max-w-5xl mx-auto mb-16">
-          {plans.map((plan, index) => (
+          {plans.map((plan, index) => {
+            const isCurrent = plan.id === currentPlan || (currentPlan === "basic" && plan.id === "basic");
+            const isLowerPlan = planRank[plan.id as keyof typeof planRank] < planRank[currentPlan as keyof typeof planRank];
+            const isDisabled = isLowerPlan && !isCurrent;
+
+            return (
             <motion.div
               key={plan.id}
               initial={{ opacity: 0, y: 20 }}
@@ -127,12 +173,23 @@ const Premium = () => {
                   plan.popular 
                     ? "border-2 border-primary shadow-lg scale-105" 
                     : "hover:border-primary/50"
+                } ${
+                  isCurrent ? "ring-2 ring-[#FF4D8D]/40" : ""
+                } ${
+                  isDisabled ? "opacity-70" : ""
                 }`}
               >
                 {plan.popular && (
                   <div className="absolute -top-3 left-1/2 -translate-x-1/2">
                     <Badge className="bg-primary text-primary-foreground shadow-md">
                       Most Popular
+                    </Badge>
+                  </div>
+                )}
+                {isCurrent && !plan.popular && (
+                  <div className="absolute -top-3 left-1/2 -translate-x-1/2">
+                    <Badge className="bg-[#FF4D8D] text-white shadow-md">
+                      Current Plan
                     </Badge>
                   </div>
                 )}
@@ -163,17 +220,24 @@ const Premium = () => {
                   </ul>
                   
                   <Button 
-                    onClick={() => handleSelectPlan(plan.id)}
+                    onClick={() => handleSelectPlan(plan.id, isDisabled)}
                     variant={plan.popular ? "gradient" : "outline"}
                     className="w-full"
                     size="lg"
+                    disabled={isDisabled || isLoadingPlan}
                   >
-                    {plan.id === "basic" ? "Current Plan" : "Get Started"}
+                    {isLoadingPlan
+                      ? "Loading..."
+                      : isCurrent
+                        ? "Current Plan"
+                        : isDisabled
+                          ? "Included"
+                          : "Get Started"}
                   </Button>
                 </CardContent>
               </Card>
             </motion.div>
-          ))}
+          )})}
         </div>
 
         {/* Perks Section */}

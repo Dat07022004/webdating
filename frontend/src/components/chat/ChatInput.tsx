@@ -2,27 +2,43 @@ import { useState } from "react";
 import { Send, Image, Smile, Mic, Video } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import EmojiPicker from "./EmojiPicker";
+import { useImageUpload } from "@/hooks/useImageUpload";
+import React, { useRef } from "react";
 
 interface ChatInputProps {
-  onSend: (message: string) => void;
-  onImageClick?: () => void;
-  onEmojiClick?: () => void;
+  onSend: (message: string, type?: 'text' | 'image') => void;
   onVideoCall?: () => void;
 }
 
 export const ChatInput = ({
   onSend,
-  onImageClick,
-  onEmojiClick,
   onVideoCall,
 }: ChatInputProps) => {
   const [message, setMessage] = useState("");
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const { uploadImage, isUploading } = useImageUpload();
 
   const handleSend = () => {
     if (message.trim()) {
-      onSend(message.trim());
+      onSend(message.trim(), 'text');
       setMessage("");
     }
+  };
+
+  const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      const url = await uploadImage(file);
+      if (url) {
+        onSend(url, 'image');
+      }
+    }
+  };
+
+  const handleEmojiSelect = (emoji: string) => {
+    setMessage(prev => prev + emoji);
   };
 
   const handleKeyPress = (e: React.KeyboardEvent) => {
@@ -35,22 +51,36 @@ export const ChatInput = ({
   return (
     <div className="flex items-center gap-2 p-4 bg-card border-t border-border">
       <div className="flex items-center gap-1">
+        <input 
+          type="file" 
+          accept="image/*" 
+          ref={fileInputRef} 
+          hidden 
+          onChange={handleImageUpload} 
+        />
         <Button
           variant="ghost"
           size="icon"
           className="text-muted-foreground hover:text-foreground"
-          onClick={onImageClick}
+          onClick={() => fileInputRef.current?.click()}
+          disabled={isUploading}
         >
-          <Image className="w-5 h-5" />
+          <Image className={`w-5 h-5 ${isUploading ? "animate-pulse" : ""}`} />
         </Button>
-        <Button
-          variant="ghost"
-          size="icon"
-          className="text-muted-foreground hover:text-foreground"
-          onClick={onEmojiClick}
-        >
-          <Smile className="w-5 h-5" />
-        </Button>
+        <Popover>
+          <PopoverTrigger asChild>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="text-muted-foreground hover:text-foreground"
+            >
+              <Smile className="w-5 h-5" />
+            </Button>
+          </PopoverTrigger>
+          <PopoverContent side="top" className="w-auto p-0 border-none bg-transparent shadow-none" sideOffset={10}>
+            <EmojiPicker onEmojiSelect={handleEmojiSelect} />
+          </PopoverContent>
+        </Popover>
       </div>
       <Input
         value={message}
