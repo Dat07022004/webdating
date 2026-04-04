@@ -17,6 +17,7 @@ vi.mock("@clerk/clerk-react", () => {
       isSignedIn: true,
       userId: "user_123",
       sessionId: "session_123",
+      getToken: vi.fn(async () => "mock_token"),
     }),
     ClerkProvider: ({ children }: { children: React.ReactNode }) => children,
     SignIn: () => React.createElement("div", null, "Mock SignIn Component"),
@@ -48,3 +49,13 @@ class MockObserver {
 }
 vi.stubGlobal("IntersectionObserver", MockObserver);
 vi.stubGlobal("ResizeObserver", MockObserver);
+
+vi.stubGlobal(
+  "fetch",
+  vi.fn(async () => ({
+    ok: true,
+    status: 200,
+    json: async () => ({}),
+    text: async () => "",
+  })),
+);

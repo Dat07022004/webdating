@@ -67,6 +67,9 @@ const startServer = async () => {
     console.log(`Server is running on port ${ENV.PORT}`);
   });
 };
-startServer();
+
+if (process.env.NODE_ENV !== "test") {
+  startServer();
+}
 
 export default app;
