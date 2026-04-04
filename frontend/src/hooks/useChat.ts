@@ -220,11 +220,46 @@ export const useChat = (activeConversationId?: string | null) => {
     [socket, activeConversationId],
   );
 
+  const deleteConversation = useCallback(
+    async (conversationId: string) => {
+      try {
+        const token = await getToken();
+        if (!token) return false;
+
+        const res = await fetch(
+          `${import.meta.env.VITE_API_URL || "http://localhost:3000"}/api/chat/conversations/${conversationId}`,
+          {
+            method: "DELETE",
+            headers: { Authorization: `Bearer ${token}` },
+          },
+        );
+
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok || !data.success) {
+          return false;
+        }
+
+        setConversations((prev) =>
+          prev.filter((conv) => conv._id !== conversationId),
+        );
+        if (activeConversationId === conversationId) {
+          setMessages([]);
+        }
+        return true;
+      } catch (error) {
+        console.error("deleteConversation error:", error);
+        return false;
+      }
+    },
+    [getToken, activeConversationId],
+  );
+
   return {
     conversations,
     messages,
     isLoading,
     sendMessage,
+    deleteConversation,
     fetchConversations,
     currentClerkId,
   };

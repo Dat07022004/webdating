@@ -4,16 +4,22 @@ import { motion } from "framer-motion";
 import {
   Search,
   ArrowLeft,
-  Phone,
   Video,
   MoreVertical,
   Verified,
+  Trash2,
 } from "lucide-react";
 import { Layout } from "@/components/layout/Layout";
 import { ChatBubble } from "@/components/chat/ChatBubble";
 import { ChatInput } from "@/components/chat/ChatInput";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
 import { useChat, ChatUser, Conversation } from "@/hooks/useChat";
 import { useWebRTC } from "@/hooks/useWebRTC";
@@ -39,8 +45,13 @@ export default function Messages() {
   const [searchQuery, setSearchQuery] = useState("");
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
-  const { conversations, messages, sendMessage, currentClerkId } =
-    useChat(selectedConversation);
+  const {
+    conversations,
+    messages,
+    sendMessage,
+    deleteConversation,
+    currentClerkId,
+  } = useChat(selectedConversation);
 
   const selectedChat = conversations.find(
     (c) => c._id === selectedConversation,
@@ -70,6 +81,24 @@ export default function Messages() {
     const otherUser = getOtherUser(selectedChat);
     if (!otherUser) return;
     startCall(otherUser._id);
+  };
+
+  const handleDeleteConversation = async () => {
+    if (!selectedChat) return;
+
+    const ok = window.confirm(
+      "Xóa cuộc trò chuyện này vĩnh viễn? Hành động này sẽ xóa toàn bộ tin nhắn và không thể hoàn tác.",
+    );
+    if (!ok) return;
+
+    const success = await deleteConversation(selectedChat._id);
+    if (!success) {
+      window.alert("Xóa cuộc trò chuyện thất bại. Vui lòng thử lại.");
+      return;
+    }
+
+    setSelectedConversation(null);
+    navigate("/messages");
   };
 
   useEffect(() => {
@@ -267,18 +296,26 @@ export default function Messages() {
                         size="icon"
                         onClick={handleVideoCall}
                       >
-                        <Phone className="w-5 h-5" />
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        onClick={handleVideoCall}
-                      >
                         <Video className="w-5 h-5" />
                       </Button>
-                      <Button variant="ghost" size="icon">
-                        <MoreVertical className="w-5 h-5" />
-                      </Button>
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button variant="ghost" size="icon">
+                            <MoreVertical className="w-5 h-5" />
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end" className="w-52">
+                          <DropdownMenuItem
+                            className="text-destructive focus:text-destructive"
+                            onSelect={() => {
+                              void handleDeleteConversation();
+                            }}
+                          >
+                            <Trash2 className="mr-2 h-4 w-4" />
+                            Delete Conversation
+                          </DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
                     </div>
                   </div>
                 );

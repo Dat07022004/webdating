@@ -1,11 +1,27 @@
-import express from 'express';
-import { getConversations, getMessages, createConversation } from '../controllers/chat.controller.js';
-import { requireAuth } from '@clerk/express'; // ensure user is authed
+import express from "express";
+import {
+  getConversations,
+  getMessages,
+  createConversation,
+  deleteConversation,
+} from "../controllers/chat.controller.js";
+import { requireAuth } from "@clerk/express"; // ensure user is authed
 
-const router = express.requireAuth ? express.Router().use(requireAuth()) : express.Router();
+const router = express.requireAuth
+  ? express.Router().use(requireAuth())
+  : express.Router();
 
-router.get('/conversations', requireAuth(), getConversations);
-router.get('/conversations/:conversationId/messages', requireAuth(), getMessages);
-router.post('/conversations', requireAuth(), createConversation);
+router.get("/conversations", requireAuth(), getConversations);
+router.get(
+  "/conversations/:conversationId/messages",
+  requireAuth(),
+  getMessages,
+);
+router.post("/conversations", requireAuth(), createConversation);
+router.delete(
+  "/conversations/:conversationId",
+  requireAuth(),
+  deleteConversation,
+);
 
 export default router;

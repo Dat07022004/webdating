@@ -33,6 +33,53 @@ type IcePayload = {
   candidate: RTCIceCandidateInit;
 };
 
+const buildIceServers = (): RTCIceServer[] => {
+  const servers: RTCIceServer[] = [
+    { urls: "stun:stun.l.google.com:19302" },
+    { urls: "stun:global.stun.twilio.com:3478" },
+  ];
+
+  const turnUrlsRaw = import.meta.env.VITE_TURN_URLS as string | undefined;
+  const turnUrl = import.meta.env.VITE_TURN_URL as string | undefined;
+  const turnUsername = import.meta.env.VITE_TURN_USERNAME as string | undefined;
+  const turnCredential = import.meta.env.VITE_TURN_CREDENTIAL as
+    | string
+    | undefined;
+
+  const parsedTurnUrls = (turnUrlsRaw || turnUrl || "")
+    .split(",")
+    .map((value) => value.trim())
+    .filter(Boolean);
+
+  if (parsedTurnUrls.length > 0 && turnUsername && turnCredential) {
+    servers.push({
+      urls: parsedTurnUrls,
+      username: turnUsername,
+      credential: turnCredential,
+    });
+  } else {
+    // Fallback TURN for quick connectivity across strict NAT/firewall networks.
+    // Replace with your own TURN in production for stability and security control.
+    servers.push({
+      urls: [
+        "turn:openrelay.metered.ca:80",
+        "turn:openrelay.metered.ca:443",
+        "turns:openrelay.metered.ca:443",
+      ],
+      username: "openrelayproject",
+      credential: "openrelayproject",
+    });
+  }
+
+  if (import.meta.env.PROD && parsedTurnUrls.length === 0) {
+    console.warn(
+      "[WebRTC] Using public TURN fallback. Configure VITE_TURN_URLS/VITE_TURN_USERNAME/VITE_TURN_CREDENTIAL for production reliability.",
+    );
+  }
+
+  return servers;
+};
+
 export const useWebRTC = () => {
   const { socket } = useSocket();
   const [callState, setCallState] = useState<CallState>("idle");
@@ -51,6 +98,8 @@ export const useWebRTC = () => {
   const connectingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(
     null,
   );
+  const remotePlayAttemptRef = useRef(0);
+  const iceRestartAttemptedRef = useRef(false);
 
   const remoteUserIdRef = useRef<string | null>(null);
   const callStateRef = useRef<CallState>("idle");
@@ -71,6 +120,35 @@ export const useWebRTC = () => {
     }
   };
 
+  const playRemoteVideo = useCallback(async () => {
+    const video = remoteVideoRef.current;
+    if (!video || !video.srcObject) return;
+
+    const attemptId = ++remotePlayAttemptRef.current;
+    try {
+      await video.play();
+    } catch (error) {
+      const err = error as { name?: string; message?: string };
+
+      // srcObject changes can interrupt play; retry once after render settles.
+      if (err?.name === "AbortError") {
+        window.setTimeout(() => {
+          if (attemptId === remotePlayAttemptRef.current) {
+            void video.play().catch((retryError) => {
+              console.warn(
+                "[WebRTC] remote video retry play failed:",
+                retryError,
+              );
+            });
+          }
+        }, 120);
+        return;
+      }
+
+      console.warn("[WebRTC] remote video play failed:", error);
+    }
+  }, []);
+
   const syncVideoElements = useCallback(() => {
     if (localVideoRef.current && localStream.current) {
       if (localVideoRef.current.srcObject !== localStream.current) {
@@ -82,9 +160,6 @@ export const useWebRTC = () => {
       if (remoteVideoRef.current.srcObject !== remoteStream.current) {
         remoteVideoRef.current.srcObject = remoteStream.current;
       }
-      void remoteVideoRef.current.play().catch((error) => {
-        console.warn("[WebRTC] remote video play failed:", error);
-      });
     }
   }, []);
 
@@ -98,15 +173,24 @@ export const useWebRTC = () => {
       }
     });
 
-    if (remoteVideoRef.current.srcObject !== stream) {
+    const currentSrc = remoteVideoRef.current.srcObject as MediaStream | null;
+    const isSameStream =
+      currentSrc &&
+      currentSrc.id === stream.id &&
+      currentSrc.getTracks().length === stream.getTracks().length;
+
+    if (!isSameStream) {
       remoteVideoRef.current.srcObject = stream;
     }
 
-    try {
-      await remoteVideoRef.current.play();
-    } catch (error) {
-      console.warn("[WebRTC] remote video play failed:", error);
+    await playRemoteVideo();
+  };
+
+  const ensureRemoteStream = () => {
+    if (!remoteStream.current) {
+      remoteStream.current = new MediaStream();
     }
+    return remoteStream.current;
   };
 
   const flushPendingIceCandidates = useCallback(async () => {
@@ -149,6 +233,7 @@ export const useWebRTC = () => {
 
   const cleanup = useCallback(() => {
     clearTimers();
+    iceRestartAttemptedRef.current = false;
 
     if (localStream.current) {
       localStream.current.getTracks().forEach((track) => {
@@ -160,6 +245,12 @@ export const useWebRTC = () => {
     if (peerConnection.current) {
       peerConnection.current.close();
       peerConnection.current = null;
+    }
+    if (remoteStream.current) {
+      remoteStream.current.getTracks().forEach((track) => {
+        track.stop();
+        remoteStream.current?.removeTrack(track);
+      });
     }
     pendingIncomingCall.current = null;
     pendingIceCandidates.current = [];
@@ -180,10 +271,10 @@ export const useWebRTC = () => {
       }
 
       const pc = new RTCPeerConnection({
-        iceServers: [
-          { urls: "stun:stun.l.google.com:19302" },
-          { urls: "stun:global.stun.twilio.com:3478" },
-        ],
+        iceServers: buildIceServers(),
+        iceTransportPolicy:
+          import.meta.env.VITE_FORCE_RELAY === "true" ? "relay" : "all",
+        iceCandidatePoolSize: 10,
       });
 
       pc.onicecandidate = (event) => {
@@ -195,11 +286,59 @@ export const useWebRTC = () => {
         });
       };
 
+      const inboundRemoteStream = ensureRemoteStream();
+      void attachRemoteStream(inboundRemoteStream);
+
       pc.ontrack = (event) => {
-        const remoteStream = event.streams[0];
-        if (remoteStream) {
-          void attachRemoteStream(remoteStream);
+        const stream = ensureRemoteStream();
+        const hasTrack = stream
+          .getTracks()
+          .some((track) => track.id === event.track.id);
+        if (!hasTrack) {
+          stream.addTrack(event.track);
         }
+
+        event.track.onunmute = () => {
+          void attachRemoteStream(stream);
+        };
+
+        void attachRemoteStream(stream);
+      };
+
+      pc.oniceconnectionstatechange = () => {
+        const iceState = pc.iceConnectionState;
+        console.log("[WebRTC] iceConnectionState:", iceState);
+
+        if (
+          (iceState === "disconnected" || iceState === "failed") &&
+          !iceRestartAttemptedRef.current
+        ) {
+          iceRestartAttemptedRef.current = true;
+          pc.createOffer({ iceRestart: true })
+            .then(async (offer) => {
+              await pc.setLocalDescription(offer);
+              emitEvent("webrtc-offer", { callId, offer });
+            })
+            .catch((error) => {
+              console.error("[WebRTC] ICE restart failed:", error);
+            });
+        }
+
+        if (iceState === "failed") {
+          console.error(
+            "[WebRTC] ICE failed. Check TURN config for this environment.",
+          );
+        }
+      };
+
+      pc.onicecandidateerror = (event) => {
+        console.error("[WebRTC] ICE candidate error:", {
+          address: event.address,
+          port: event.port,
+          url: event.url,
+          errorCode: event.errorCode,
+          errorText: event.errorText,
+        });
       };
 
       pc.onconnectionstatechange = () => {
@@ -238,7 +377,7 @@ export const useWebRTC = () => {
       peerConnection.current = pc;
       return pc;
     },
-    [cleanup, clearTimers, emitEvent],
+    [cleanup, clearTimers, emitEvent, playRemoteVideo],
   );
 
   const initLocalStream = async () => {
@@ -256,8 +395,16 @@ export const useWebRTC = () => {
 
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
-        video: true,
-        audio: true,
+        video: {
+          width: { ideal: 1280 },
+          height: { ideal: 720 },
+          frameRate: { ideal: 24, max: 30 },
+        },
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true,
+        },
       });
       localStream.current = stream;
       if (localVideoRef.current) {
@@ -432,7 +579,7 @@ export const useWebRTC = () => {
         if (callStateRef.current === "connecting") {
           cleanup();
         }
-      }, 20_000);
+      }, 45_000);
     };
 
     const handleOffer = async (data: OfferPayload) => {
@@ -464,7 +611,7 @@ export const useWebRTC = () => {
         if (callStateRef.current === "connecting") {
           cleanup();
         }
-      }, 20_000);
+      }, 45_000);
     };
 
     const handleAnswer = async (

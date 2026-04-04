@@ -5,14 +5,43 @@ import { removeUser } from "./onlineUsers.js";
 
 let io;
 
+const defaultAllowedOrigins = [
+  "https://heartly-webdating-frontend-8h1el.sevalla.app",
+  "http://localhost:5173",
+  "http://localhost:3000",
+];
+
+const envAllowedOrigins = (process.env.ALLOWED_ORIGINS || "")
+  .split(",")
+  .map((value) => value.trim())
+  .filter(Boolean);
+
+const allowedOrigins = Array.from(
+  new Set([...defaultAllowedOrigins, ...envAllowedOrigins]),
+);
+
+const isDynamicAllowedOrigin = (origin) => {
+  return (
+    /\.trycloudflare\.com$/i.test(origin) || /\.sevalla\.app$/i.test(origin)
+  );
+};
+
 export function initSocket(server) {
   io = new Server(server, {
     cors: {
-      oorigin: function (origin, callback) {
-        callback(null, true);
+      origin: (origin, callback) => {
+        if (!origin) {
+          callback(null, true);
+          return;
+        }
+
+        const isAllowed =
+          allowedOrigins.includes(origin) || isDynamicAllowedOrigin(origin);
+
+        callback(null, isAllowed);
       },
-      methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-      credentials: true, // Giữ nguyên cái này để không bị rớt token
+      methods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
+      credentials: true,
     },
   });
 
