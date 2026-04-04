@@ -3,7 +3,8 @@ import { requireAuth } from '@clerk/express';
 import { ENV } from '../config/env.js';
 import { createMoMoPayment, getPremiumStatus, momoIPN, momoReturn } from '../controllers/premium.controller.js';
 
-const router = express.requireAuth ? express.Router().use(requireAuth()) : express.Router();
+const authMiddleware = ENV.NODE_ENV === 'production' ? requireAuth() : (_req, _res, next) => next();
+const router = express.Router().use(authMiddleware);
 
 const resolveAuthContext = (req) => {
 	try {
@@ -19,17 +20,18 @@ const resolveAuthContext = (req) => {
 	}
 };
 
+const resolveClerkId = (req, auth) => req.user?.clerkId || auth?.userId || (ENV.NODE_ENV === 'production' ? undefined : req.headers?.['x-clerk-id'] || req.body?.clerkId || req.query?.clerkId);
+
 const sendError = (res, error, fallbackMessage) => {
 	const statusCode = Number.isInteger(error?.statusCode) ? error.statusCode : 500;
 	const message = error?.message || fallbackMessage;
 	return res.status(statusCode).json({ message });
 };
 
-router.post('/create-payment', requireAuth(), async (req, res) => {
+router.post('/create-payment', async (req, res) => {
 	try {
 		const auth = resolveAuthContext(req);
-		const fallbackClerkId = ENV.NODE_ENV === 'production' ? undefined : req.body?.clerkId;
-		const clerkId = auth?.userId || fallbackClerkId;
+		const clerkId = resolveClerkId(req, auth);
 		const result = await createMoMoPayment({ clerkId, plan: req.body?.plan });
 		return res.status(200).json(result);
 	} catch (error) {
@@ -59,11 +61,10 @@ router.post('/momo-return', async (req, res) => {
 	}
 });
 
-router.get('/status', requireAuth(), async (req, res) => {
+router.get('/status', async (req, res) => {
 	try {
 		const auth = resolveAuthContext(req);
-		const fallbackClerkId = ENV.NODE_ENV === 'production' ? undefined : req.query?.clerkId;
-		const clerkId = auth?.userId || fallbackClerkId;
+		const clerkId = resolveClerkId(req, auth);
 		const result = await getPremiumStatus({ clerkId });
 		return res.status(200).json(result);
 	} catch (error) {

@@ -15,6 +15,11 @@ interface MatchCardProps {
   isNew?: boolean;
   onClick?: () => void;
   onMessage?: () => void;
+  actionLabel?: string;
+  onAction?: () => void;
+  actionDisabled?: boolean;
+  actionIcon?: "message" | "heart";
+  actionClassName?: string;
   className?: string;
 }
 
@@ -23,8 +28,15 @@ export const MatchCard = ({
   isNew = false,
   onClick,
   onMessage,
+  actionLabel = "Message",
+  onAction,
+  actionDisabled = false,
+  actionIcon = "message",
+  actionClassName,
   className,
 }: MatchCardProps) => {
+  const handleAction = onAction || onMessage;
+
   return (
     <motion.div
       className={cn(
@@ -72,14 +84,21 @@ export const MatchCard = ({
       <Button
         size="sm"
         variant="soft"
-        className="mt-3 gap-1"
+        className={cn("mt-3 gap-1", actionClassName)}
+        disabled={actionDisabled}
         onClick={(e) => {
           e.stopPropagation();
-          onMessage?.();
+          if (!actionDisabled) {
+            handleAction?.();
+          }
         }}
       >
-        <MessageCircle className="w-4 h-4" />
-        Message
+        {actionIcon === "heart" ? (
+          <Heart className="w-4 h-4" />
+        ) : (
+          <MessageCircle className="w-4 h-4" />
+        )}
+        {actionLabel}
       </Button>
     </motion.div>
   );
