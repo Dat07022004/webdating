@@ -74,7 +74,10 @@ const _dirname = path.resolve();
 console.log('Clerk Keys Loaded:', !!ENV.CLERK_SECRET_KEY, !!ENV.CLERK_PUBLISHABLE_KEY);
 
 app.use(express.json());
-app.use(clerkMiddleware()); // uses env vars automatically
+app.use(clerkMiddleware({
+  secretKey: ENV.CLERK_SECRET_KEY,
+  publishableKey: ENV.CLERK_PUBLISHABLE_KEY,
+}));
 
 // Inngest requests require parsed JSON body.
 app.use("/api/inngest", serve({ client: inngest, functions }));

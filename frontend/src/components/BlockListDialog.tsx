@@ -5,6 +5,7 @@ import { useAuth } from "@clerk/clerk-react";
 import { useToast } from "@/hooks/use-toast";
 import { Ban, UserX, Loader2 } from "lucide-react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { UnblockConfirmDialog } from "./UnblockConfirmDialog";
 
 interface BlockedUser {
   id: string;
@@ -23,6 +24,7 @@ export function BlockListDialog({ isOpen, onClose }: BlockListDialogProps) {
   const [blockedUsers, setBlockedUsers] = useState<BlockedUser[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [unblockingId, setUnblockingId] = useState<string | null>(null);
+  const [confirmTarget, setConfirmTarget] = useState<BlockedUser | null>(null);
 
   const fetchBlockedUsers = async () => {
     try {
@@ -122,7 +124,7 @@ export function BlockListDialog({ isOpen, onClose }: BlockListDialogProps) {
                     size="sm"
                     variant="outline"
                     className="rounded-xl h-9 text-xs font-bold hover:bg-destructive/10 hover:text-destructive hover:border-destructive/20"
-                    onClick={() => handleUnblock(user.id)}
+                    onClick={() => setConfirmTarget(user)}
                     disabled={unblockingId === user.id}
                   >
                     {unblockingId === user.id ? (
@@ -148,6 +150,15 @@ export function BlockListDialog({ isOpen, onClose }: BlockListDialogProps) {
           )}
         </div>
       </DialogContent>
+
+      {confirmTarget && (
+        <UnblockConfirmDialog
+          isOpen={!!confirmTarget}
+          onClose={() => setConfirmTarget(null)}
+          targetUser={{ id: confirmTarget.id, name: confirmTarget.name }}
+          onConfirm={() => handleUnblock(confirmTarget.id)}
+        />
+      )}
     </Dialog>
   );
 }
