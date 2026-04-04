@@ -166,6 +166,8 @@ Headers:
 
 ## 4. Notifications
 
+Lưu ý: backend hiện hỗ trợ cả `/api/notification` và `/api/notifications`. Nên ưu tiên `/api/notifications`.
+
 ### GET `/notifications`
 
 Headers:

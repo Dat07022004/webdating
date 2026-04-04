@@ -37,6 +37,7 @@ app.use(clerkMiddleware({
 app.use("/api/inngest", serve({ client: inngest, functions }));
 app.use("/api/users", requireActiveUser, userRoutes);
 app.use("/api/chat", requireActiveUser, chatRoutes);
+app.use("/api/notifications", notificationRoutes);
 app.use("/api/upload", requireActiveUser, uploadRoutes);
 app.use("/api/premium", requireActiveUser, premiumRoutes);
 app.use("/api/admin", adminRoutes);
