@@ -6,33 +6,64 @@ import { Textarea } from "@/components/ui/textarea";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Star, ArrowLeft, Check, Heart, MapPin, CalendarDays } from "lucide-react";
 import { motion } from "framer-motion";
-import { Link } from "react-router-dom";
+import { Link, useParams } from "react-router-dom";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
 
 const tags = ["Great conversation", "Very kind", "Good listener", "Funny", "Respectful", "Charming", "Adventurous", "Thoughtful"];
 
 const DateReview = () => {
+  const { id: appointmentId } = useParams();
   const [rating, setRating] = useState(0);
   const [hoverRating, setHoverRating] = useState(0);
   const [review, setReview] = useState("");
   const [selectedTags, setSelectedTags] = useState<string[]>([]);
   const [wouldMeetAgain, setWouldMeetAgain] = useState<boolean | null>(null);
   const [submitted, setSubmitted] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
   const { toast } = useToast();
 
   const toggleTag = (tag: string) => {
     setSelectedTags(prev => prev.includes(tag) ? prev.filter(t => t !== tag) : [...prev, tag]);
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!appointmentId) {
+      toast({ title: "Thiếu appointmentId", variant: "destructive" });
+      return;
+    }
     if (rating === 0) {
       toast({ title: "Please add a rating", variant: "destructive" });
       return;
     }
-    setSubmitted(true);
-    toast({ title: "Review submitted! 💕", description: "Thanks for sharing your experience." });
+
+    setSubmitting(true);
+    try {
+      const res = await fetch("/api/reviews", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          appointmentId,
+          rating,
+          tags: selectedTags,
+          comment: review,
+          wouldMeetAgain,
+        }),
+      });
+
+      if (!res.ok) {
+        const payload = await res.json().catch(() => ({}));
+        throw new Error(payload.message || "Failed to submit review");
+      }
+
+      setSubmitted(true);
+      toast({ title: "Review submitted! 💕", description: "Thanks for sharing your experience." });
+    } catch (err: any) {
+      toast({ title: "Không gửi được đánh giá", description: String(err?.message || err), variant: "destructive" });
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   if (submitted) {
@@ -78,8 +109,8 @@ const DateReview = () => {
               <div>
                 <h3 className="font-serif font-semibold text-foreground">Olivia M.</h3>
                 <div className="flex items-center gap-3 text-sm text-muted-foreground">
-                  <span className="flex items-center gap-1"><MapPin className="w-3.5 h-3.5" />Botanical Gardens</span>
-                  <span className="flex items-center gap-1"><CalendarDays className="w-3.5 h-3.5" />Mar 10</span>
+                  <span className="flex items-center gap-1"><MapPin className="w-3.5 h-3.5" />After appointment</span>
+                  <span className="flex items-center gap-1"><CalendarDays className="w-3.5 h-3.5" />ID: {appointmentId?.slice(-6)}</span>
                 </div>
               </div>
             </CardContent>
@@ -185,7 +216,9 @@ const DateReview = () => {
               </CardContent>
             </Card>
 
-            <Button type="submit" variant="hero" className="w-full">Submit Review</Button>
+            <Button type="submit" variant="hero" className="w-full" disabled={submitting}>
+              {submitting ? "Submitting..." : "Submit Review"}
+            </Button>
           </form>
         </motion.div>
       </div>

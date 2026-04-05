@@ -6,6 +6,7 @@ import {
   updateAppointment,
   cancelAppointment,
 } from "../services/appointment.service.js";
+import { Appointment } from "../models/appointments.model.js";
 
 const router = express.Router();
 
@@ -34,7 +35,11 @@ router.post("/suggest", async (req, res) => {
  */
 router.post("/", async (req, res) => {
   try {
-    const { userId, locationId, startTime, totalCost } = req.body;
+    const auth = typeof req.auth === "function" ? req.auth() : req.auth;
+    const userId = auth?.userId || req.body.userId;
+    if (!userId) return res.status(401).json({ message: "Unauthorized" });
+
+    const { locationId, startTime, totalCost } = req.body;
     const saved = await createAppointment({ userId, locationId, startTime, totalCost });
     return res.status(201).json(saved);
   } catch (err) {
@@ -50,7 +55,13 @@ router.post("/", async (req, res) => {
  */
 router.get("/:userId", async (req, res) => {
   try {
-    const { userId } = req.params;
+    const auth = typeof req.auth === "function" ? req.auth() : req.auth;
+    const requesterId = auth?.userId;
+    const { userId: paramUserId } = req.params;
+    const userId = paramUserId || requesterId;
+    if (!userId) return res.status(401).json({ message: "Unauthorized" });
+    if (requesterId !== userId) return res.status(403).json({ message: "Forbidden" });
+
     const appts = await getAppointmentsByUser(userId);
     return res.status(200).json(appts);
   } catch (err) {
@@ -67,7 +78,14 @@ router.get("/:userId", async (req, res) => {
  */
 router.patch("/:id", async (req, res) => {
   try {
+    const auth = typeof req.auth === "function" ? req.auth() : req.auth;
+    const requesterId = auth?.userId;
     const { id } = req.params;
+
+    const appt = await Appointment.findById(id).lean();
+    if (!appt) return res.status(404).json({ message: "Appointment not found" });
+    if (appt.userId?.toString() !== requesterId) return res.status(403).json({ message: "Forbidden" });
+
     const updates = req.body;
     const saved = await updateAppointment(id, updates);
     return res.status(200).json(saved);
@@ -84,7 +102,14 @@ router.patch("/:id", async (req, res) => {
  */
 router.delete("/:id", async (req, res) => {
   try {
+    const auth = typeof req.auth === "function" ? req.auth() : req.auth;
+    const requesterId = auth?.userId;
     const { id } = req.params;
+
+    const appt = await Appointment.findById(id).lean();
+    if (!appt) return res.status(404).json({ message: "Appointment not found" });
+    if (appt.userId?.toString() !== requesterId) return res.status(403).json({ message: "Forbidden" });
+
     const saved = await cancelAppointment(id);
     return res.status(200).json({ message: "Appointment cancelled", data: saved });
   } catch (err) {

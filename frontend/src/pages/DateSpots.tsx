@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Layout } from "@/components/layout/Layout";
 import { Card, CardContent, CardFooter, CardHeader } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -7,99 +7,32 @@ import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { MapPin, Star, DollarSign, Clock, Heart, Search, Filter, Coffee, UtensilsCrossed, Wine, TreePine, Music, Palette } from "lucide-react";
 import { motion } from "framer-motion";
+import { useToast } from "@/hooks/use-toast";
 
-const spots = [
-  {
-    id: 1,
-    name: "Sunset Rooftop Lounge",
-    category: "Bar & Lounge",
-    icon: Wine,
-    location: "Downtown, 5th Avenue",
-    description: "A stunning rooftop bar with panoramic city views. Perfect for a romantic evening watching the sunset over cocktails.",
-    cost: "$$$",
-    rating: 4.8,
-    reviews: 234,
-    image: "🌇",
-    tags: ["Romantic", "Scenic", "Cocktails"],
-    hours: "5 PM – 12 AM",
-    liked: false,
-  },
-  {
-    id: 2,
-    name: "The Cozy Bean Café",
-    category: "Coffee & Café",
-    icon: Coffee,
-    location: "Midtown, Oak Street",
-    description: "Warm, intimate café with artisan coffee and homemade pastries. Ideal for a casual first date.",
-    cost: "$",
-    rating: 4.6,
-    reviews: 189,
-    image: "☕",
-    tags: ["Casual", "Cozy", "Coffee"],
-    hours: "7 AM – 9 PM",
-    liked: true,
-  },
-  {
-    id: 3,
-    name: "Bella Italia Trattoria",
-    category: "Restaurant",
-    icon: UtensilsCrossed,
-    location: "Little Italy, Vine Road",
-    description: "Authentic Italian dining with candlelit tables and live acoustic music on weekends.",
-    cost: "$$",
-    rating: 4.7,
-    reviews: 312,
-    image: "🍝",
-    tags: ["Italian", "Fine Dining", "Live Music"],
-    hours: "11 AM – 11 PM",
-    liked: false,
-  },
-  {
-    id: 4,
-    name: "Botanical Gardens Walk",
-    category: "Outdoor",
-    icon: TreePine,
-    location: "Westside Park",
-    description: "Beautiful botanical gardens with walking trails, a koi pond, and seasonal flower displays.",
-    cost: "$",
-    rating: 4.9,
-    reviews: 567,
-    image: "🌸",
-    tags: ["Nature", "Walking", "Free-ish"],
-    hours: "6 AM – 8 PM",
-    liked: false,
-  },
-  {
-    id: 5,
-    name: "Jazz & Blues Corner",
-    category: "Entertainment",
-    icon: Music,
-    location: "Arts District",
-    description: "Intimate jazz club with craft cocktails and world-class performers every night.",
-    cost: "$$",
-    rating: 4.5,
-    reviews: 198,
-    image: "🎷",
-    tags: ["Music", "Nightlife", "Cocktails"],
-    hours: "7 PM – 2 AM",
-    liked: true,
-  },
-  {
-    id: 6,
-    name: "Art & Sip Studio",
-    category: "Activities",
-    icon: Palette,
-    location: "Creative Quarter",
-    description: "Paint together while enjoying wine! Fun, interactive date idea with guided art sessions.",
-    cost: "$$",
-    rating: 4.7,
-    reviews: 145,
-    image: "🎨",
-    tags: ["Creative", "Fun", "Wine"],
-    hours: "10 AM – 10 PM",
-    liked: false,
-  },
-];
+type DateSpotItem = {
+  _id: string;
+  name: string;
+  address?: string;
+  category?: string;
+  averagePrice?: number;
+  openingHours?: { open?: string; close?: string };
+  averageRating?: number;
+  totalReviews?: number;
+};
+
+const categoryLabel: Record<string, string> = {
+  cafe: "Coffee & Cafe",
+  restaurant: "Restaurant",
+  cinema: "Cinema",
+  park: "Park",
+};
+
+const categoryIconMap: Record<string, any> = {
+  cafe: Coffee,
+  restaurant: UtensilsCrossed,
+  cinema: Music,
+  park: TreePine,
+};
 
 const costColors: Record<string, string> = {
   "$": "text-success",
@@ -108,18 +41,56 @@ const costColors: Record<string, string> = {
 };
 
 const DateSpots = () => {
+  const { toast } = useToast();
   const [search, setSearch] = useState("");
   const [category, setCategory] = useState("all");
-  const [favorites, setFavorites] = useState<number[]>(spots.filter(s => s.liked).map(s => s.id));
+  const [favorites, setFavorites] = useState<string[]>([]);
+  const [spots, setSpots] = useState<DateSpotItem[]>([]);
+  const [loading, setLoading] = useState(false);
 
-  const filtered = spots.filter(s => {
-    const matchSearch = s.name.toLowerCase().includes(search.toLowerCase()) || s.location.toLowerCase().includes(search.toLowerCase());
-    const matchCat = category === "all" || s.category === category;
-    return matchSearch && matchCat;
-  });
+  const fetchSpots = async () => {
+    setLoading(true);
+    try {
+      const params = new URLSearchParams();
+      if (search.trim()) params.set("search", search.trim());
+      if (category !== "all") params.set("category", category);
 
-  const toggleFav = (id: number) => {
+      const res = await fetch(`/api/date-spots?${params.toString()}`);
+      if (!res.ok) {
+        const payload = await res.json().catch(() => ({}));
+        throw new Error(payload.message || "Failed to load date spots");
+      }
+
+      const payload = await res.json();
+      setSpots(Array.isArray(payload?.items) ? payload.items : []);
+    } catch (err: any) {
+      toast({ title: "Lỗi tải địa điểm", description: String(err?.message || err), variant: "destructive" });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchSpots();
+  }, []);
+
+  const filtered = useMemo(() => spots, [spots]);
+
+  const toggleFav = (id: string) => {
     setFavorites(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
+  };
+
+  const toCostTier = (price?: number) => {
+    if (!price || price <= 100000) return "$";
+    if (price <= 300000) return "$$";
+    return "$$$";
+  };
+
+  const toIcon = (categoryKey?: string) => categoryIconMap[categoryKey || ""] || Palette;
+
+  const toHours = (openingHours?: { open?: string; close?: string }) => {
+    if (!openingHours?.open || !openingHours?.close) return "N/A";
+    return `${openingHours.open} - ${openingHours.close}`;
   };
 
   return (
@@ -144,35 +115,40 @@ const DateSpots = () => {
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="all">All Categories</SelectItem>
-              <SelectItem value="Bar & Lounge">Bar & Lounge</SelectItem>
-              <SelectItem value="Coffee & Café">Coffee & Café</SelectItem>
-              <SelectItem value="Restaurant">Restaurant</SelectItem>
-              <SelectItem value="Outdoor">Outdoor</SelectItem>
-              <SelectItem value="Entertainment">Entertainment</SelectItem>
-              <SelectItem value="Activities">Activities</SelectItem>
+              <SelectItem value="cafe">Coffee & Cafe</SelectItem>
+              <SelectItem value="restaurant">Restaurant</SelectItem>
+              <SelectItem value="cinema">Cinema</SelectItem>
+              <SelectItem value="park">Park</SelectItem>
             </SelectContent>
           </Select>
+          <Button variant="outline" onClick={fetchSpots} disabled={loading}>
+            {loading ? "Loading..." : "Apply"}
+          </Button>
         </motion.div>
 
         {/* Grid */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {filtered.map((spot, i) => (
-            <motion.div key={spot.id} initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.05 }}>
+          {filtered.map((spot, i) => {
+            const IconComp = toIcon(spot.category);
+            const costTier = toCostTier(spot.averagePrice);
+
+            return (
+            <motion.div key={spot._id} initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.05 }}>
               <Card className="group hover:shadow-lg transition-all duration-300 overflow-hidden gradient-card h-full flex flex-col">
                 {/* Image area */}
                 <div className="h-40 gradient-primary flex items-center justify-center text-6xl relative">
-                  {spot.image}
+                  {spot.category === "cafe" ? "☕" : spot.category === "restaurant" ? "🍽️" : spot.category === "cinema" ? "🎬" : "🌿"}
                   <Button
                     variant="ghost"
                     size="icon"
                     className="absolute top-3 right-3 bg-card/80 backdrop-blur-sm hover:bg-card"
-                    onClick={() => toggleFav(spot.id)}
+                    onClick={() => toggleFav(spot._id)}
                   >
-                    <Heart className={`w-5 h-5 ${favorites.includes(spot.id) ? "fill-primary text-primary" : "text-muted-foreground"}`} />
+                    <Heart className={`w-5 h-5 ${favorites.includes(spot._id) ? "fill-primary text-primary" : "text-muted-foreground"}`} />
                   </Button>
                   <Badge className="absolute top-3 left-3 bg-card/80 backdrop-blur-sm text-foreground border-0">
-                    <spot.icon className="w-3 h-3 mr-1" />
-                    {spot.category}
+                    <IconComp className="w-3 h-3 mr-1" />
+                    {categoryLabel[spot.category || ""] || "Date Spot"}
                   </Badge>
                 </div>
 
@@ -181,43 +157,38 @@ const DateSpots = () => {
                     <h3 className="font-serif text-lg font-semibold text-foreground group-hover:text-primary transition-colors">{spot.name}</h3>
                     <div className="flex items-center gap-1 shrink-0">
                       <Star className="w-4 h-4 fill-accent text-accent" />
-                      <span className="text-sm font-medium">{spot.rating}</span>
-                      <span className="text-xs text-muted-foreground">({spot.reviews})</span>
+                      <span className="text-sm font-medium">{(spot.averageRating || 0).toFixed(1)}</span>
+                      <span className="text-xs text-muted-foreground">({spot.totalReviews || 0})</span>
                     </div>
                   </div>
                   <div className="flex items-center gap-1 text-muted-foreground text-sm">
                     <MapPin className="w-3.5 h-3.5" />
-                    {spot.location}
+                    {spot.address || "No address"}
                   </div>
                 </CardHeader>
 
                 <CardContent className="flex-1 pb-3">
-                  <p className="text-sm text-muted-foreground mb-3">{spot.description}</p>
-                  <div className="flex flex-wrap gap-1.5">
-                    {spot.tags.map(tag => (
-                      <Badge key={tag} variant="secondary" className="text-xs">{tag}</Badge>
-                    ))}
-                  </div>
+                  <p className="text-sm text-muted-foreground mb-3">Địa điểm phù hợp cho hẹn hò, có thống kê đánh giá từ cộng đồng.</p>
                 </CardContent>
 
                 <CardFooter className="border-t border-border pt-4 flex items-center justify-between">
                   <div className="flex items-center gap-4 text-sm text-muted-foreground">
                     <span className="flex items-center gap-1">
                       <DollarSign className="w-3.5 h-3.5" />
-                      <span className={`font-semibold ${costColors[spot.cost]}`}>{spot.cost}</span>
+                      <span className={`font-semibold ${costColors[costTier]}`}>{costTier}</span>
                     </span>
                     <span className="flex items-center gap-1">
                       <Clock className="w-3.5 h-3.5" />
-                      {spot.hours}
+                      {toHours(spot.openingHours)}
                     </span>
                   </div>
                   <Button size="sm" variant="gradient" asChild>
-                    <a href={`/appointments/book?spot=${spot.id}`}>Book Date</a>
+                    <a href={`/appointments/book?spot=${spot._id}`}>Book Date</a>
                   </Button>
                 </CardFooter>
               </Card>
             </motion.div>
-          ))}
+          )})}
         </div>
 
         {filtered.length === 0 && (

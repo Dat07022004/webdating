@@ -155,26 +155,35 @@ export async function createAppointment({ userId, locationId, startTime, totalCo
   const location = await Location.findById(locationId).exec();
   if (!location) throw new Error('Location not found');
 
-  const conflict = await Appointment.findOne({
-    locationId: location._id,
-    startTime: { $lt: intendedEnd },
-    endTime: { $gt: start },
-  }).exec();
+  const session = await mongoose.startSession();
+  let saved;
 
-  if (conflict) {
-    const err = new Error('Time slot occupied');
-    err.status = 409;
-    throw err;
-  }
+  await session.withTransaction(async () => {
+    const conflict = await Appointment.findOne({
+      locationId: location._id,
+      startTime: { $lt: intendedEnd },
+      endTime: { $gt: start },
+    }).session(session).exec();
 
-  const appt = new Appointment({
-    userId: mongoose.Types.ObjectId(userId),
-    locationId: location._id,
-    startTime: start,
-    totalCost: totalCost ?? location.averagePrice,
+    if (conflict) {
+      const err = new Error('Time slot occupied');
+      err.status = 409;
+      throw err;
+    }
+
+    const [created] = await Appointment.create([
+      {
+        userId: mongoose.Types.ObjectId(userId),
+        locationId: location._id,
+        startTime: start,
+        totalCost: totalCost ?? location.averagePrice,
+      },
+    ], { session });
+
+    saved = created;
   });
 
-  const saved = await appt.save();
+  await session.endSession();
 
   // Send booking confirmation email to user (best-effort)
   try {

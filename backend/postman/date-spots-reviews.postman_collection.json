@@ -1,0 +1,150 @@
+{
+  "info": {
+    "name": "WebDating - DateSpots & Reviews",
+    "_postman_id": "1a502df0-4d57-4e6a-b870-cbe08fd7c13e",
+    "description": "Collection cho module Dia diem hen ho va Danh gia sau buoi hen.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "DateSpots - List",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{token}}",
+            "type": "text"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/api/date-spots?category=cafe&search=&page=1&limit=12",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "date-spots"
+          ],
+          "query": [
+            {
+              "key": "category",
+              "value": "cafe"
+            },
+            {
+              "key": "search",
+              "value": ""
+            },
+            {
+              "key": "page",
+              "value": "1"
+            },
+            {
+              "key": "limit",
+              "value": "12"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "DateSpots - Reviews by Location",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{token}}",
+            "type": "text"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/api/date-spots/{{locationId}}/reviews",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "date-spots",
+            "{{locationId}}",
+            "reviews"
+          ]
+        }
+      }
+    },
+    {
+      "name": "Reviews - Create",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{token}}",
+            "type": "text"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json",
+            "type": "text"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"appointmentId\": \"{{appointmentId}}\",\n  \"rating\": 5,\n  \"tags\": [\"Great conversation\", \"Respectful\"],\n  \"comment\": \"Buoi hen vui va lich su.\",\n  \"wouldMeetAgain\": true\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/api/reviews",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "reviews"
+          ]
+        }
+      }
+    },
+    {
+      "name": "Reviews - My Reviews",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{token}}",
+            "type": "text"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/api/reviews/me",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "reviews",
+            "me"
+          ]
+        }
+      }
+    }
+  ],
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:5000"
+    },
+    {
+      "key": "token",
+      "value": ""
+    },
+    {
+      "key": "locationId",
+      "value": ""
+    },
+    {
+      "key": "appointmentId",
+      "value": ""
+    }
+  ]
+}

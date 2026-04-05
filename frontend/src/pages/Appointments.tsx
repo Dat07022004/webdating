@@ -87,6 +87,15 @@ const Appointments = () => {
                     </Button>
                   </div>
                 )}
+                {!showActions && apt.status !== 'cancelled' && (
+                  <div className="flex gap-2 mt-3">
+                    <Button size="sm" variant="outline" asChild>
+                      <Link to={`/review/${apt._id}`}>
+                        <Star className="w-3.5 h-3.5 mr-1" />Review
+                      </Link>
+                    </Button>
+                  </div>
+                )}
               </div>
             </div>
           </div>

@@ -15,6 +15,8 @@ import premiumRoutes from './routes/premium.routes.js';
 import notificationRoutes from './routes/notification.routes.js';
 import adminRoutes from './routes/admin.route.js';
 import revenueRoutes from './routes/revenue.routes.js';
+import dateSpotsRoutes from './routes/dateSpots.routes.js';
+import reviewRoutes from './routes/review.routes.js';
 import { requireActiveUser } from './middleware/auth.middleware.js';
 import { functions, inngest } from './config/inngest.js';
 import { startReminderWorker } from './workers/reminderWorker.js';
@@ -92,6 +94,8 @@ app.use('/api/chat', requireActiveUser, chatRoutes);
 app.use('/api/upload', requireActiveUser, uploadRoutes);
 app.use('/api/premium', requireActiveUser, premiumRoutes);
 app.use('/api/appointments', requireActiveUser, appointmentsRoutes);
+app.use('/api/date-spots', requireActiveUser, dateSpotsRoutes);
+app.use('/api/reviews', requireActiveUser, reviewRoutes);
 
 // Admin and revenue endpoints
 app.use('/api/notifications', notificationRoutes);
