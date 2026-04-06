@@ -21,7 +21,7 @@ export async function suggestAppointments({ userId, category, budget, date }) {
   if (!locations.length) return [];
 
   const userAppointments = await Appointment.find({
-    userId: mongoose.Types.ObjectId(userId),
+    userId: new mongoose.Types.ObjectId(userId),
     $or: [
       { startTime: { $gte: dayStart, $lt: dayEnd } },
       { endTime: { $gte: dayStart, $lt: dayEnd } },
@@ -121,7 +121,7 @@ export async function validateBooking({ userId, selectedTime }) {
   const activeStatuses = { $nin: ['cancelled', 'completed'] };
 
   const clause = {
-    userId: mongoose.Types.ObjectId(userId),
+    userId: new mongoose.Types.ObjectId(userId),
     status: activeStatuses,
   };
 
@@ -173,7 +173,7 @@ export async function createAppointment({ userId, locationId, startTime, totalCo
 
     const [created] = await Appointment.create([
       {
-        userId: mongoose.Types.ObjectId(userId),
+        userId: new mongoose.Types.ObjectId(userId),
         locationId: location._id,
         startTime: start,
         totalCost: totalCost ?? location.averagePrice,
@@ -188,7 +188,7 @@ export async function createAppointment({ userId, locationId, startTime, totalCo
   // Send booking confirmation email to user (best-effort)
   try {
     const usersColl = mongoose.connection.collection('users');
-    const userDoc = await usersColl.findOne({ _id: mongoose.Types.ObjectId(userId) });
+    const userDoc = await usersColl.findOne({ _id: new mongoose.Types.ObjectId(userId) });
     const toEmail = userDoc?.email;
     if (toEmail) {
       const locationName = location?.name || 'địa điểm';
@@ -208,7 +208,7 @@ export async function createAppointment({ userId, locationId, startTime, totalCo
 
 export async function getAppointmentsByUser(userId) {
   if (!mongoose.Types.ObjectId.isValid(userId)) throw new Error('Invalid userId');
-  const appts = await Appointment.find({ userId: mongoose.Types.ObjectId(userId) }).populate('locationId').sort({ startTime: 1 }).exec();
+  const appts = await Appointment.find({ userId: new mongoose.Types.ObjectId(userId) }).populate('locationId').sort({ startTime: 1 }).exec();
   return appts;
 }
 
@@ -255,7 +255,7 @@ export async function cancelAppointment(id) {
   // Send cancellation email to user (best-effort)
   try {
     const usersColl = mongoose.connection.collection('users');
-    const userDoc = await usersColl.findOne({ _id: mongoose.Types.ObjectId(appt.userId) });
+    const userDoc = await usersColl.findOne({ _id: new mongoose.Types.ObjectId(appt.userId) });
     const toEmail = userDoc?.email;
     if (toEmail) {
       const locationName = appt.locationId?.name || 'địa điểm';

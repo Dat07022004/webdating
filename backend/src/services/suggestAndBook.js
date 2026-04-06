@@ -44,7 +44,7 @@ export async function suggestAndBook(userId, category, userBudget, preferredTime
 
     // Create appointment (endTime will be set by pre-save hook if not provided)
     const appt = new Appointment({
-      userId: mongoose.Types.ObjectId(userId),
+        userId: new mongoose.Types.ObjectId(userId),
       locationId: location._id,
       startTime: preferred,
       totalCost: location.averagePrice,
@@ -55,7 +55,7 @@ export async function suggestAndBook(userId, category, userBudget, preferredTime
     // send confirmation email to user
     try {
       const usersColl = mongoose.connection.collection('users');
-      const userDoc = await usersColl.findOne({ _id: mongoose.Types.ObjectId(userId) });
+        const userDoc = await usersColl.findOne({ _id: new mongoose.Types.ObjectId(userId) });
       const toEmail = userDoc?.email;
       if (toEmail) {
         const locationName = location?.name || 'địa điểm';

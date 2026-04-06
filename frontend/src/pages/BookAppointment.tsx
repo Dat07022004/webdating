@@ -13,23 +13,22 @@ import { CalendarIcon, Clock, MapPin, Heart, ArrowLeft, Check } from "lucide-rea
 import { format } from "date-fns";
 import { cn } from "@/lib/utils";
 import { motion } from "framer-motion";
-import { Link } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@clerk/clerk-react";
 
-const matchedUsers = [
-  { id: 1, name: "Emma W.", initials: "EW", age: 26 },
-  { id: 2, name: "Sophie L.", initials: "SL", age: 24 },
-  { id: 3, name: "Olivia M.", initials: "OM", age: 28 },
-];
+type MatchedUser = {
+  id: string;
+  name: string;
+  age: number;
+  initials: string;
+};
 
-const spots = [
-  { id: 1, name: "Sunset Rooftop Lounge", location: "Downtown" },
-  { id: 2, name: "The Cozy Bean Café", location: "Midtown" },
-  { id: 3, name: "Bella Italia Trattoria", location: "Little Italy" },
-  { id: 4, name: "Botanical Gardens Walk", location: "Westside Park" },
-  { id: 5, name: "Jazz & Blues Corner", location: "Arts District" },
-];
+type DateSpotOption = {
+  id: string;
+  name: string;
+  address?: string;
+};
 
 const timeSlots = [
   "10:00 AM", "11:00 AM", "12:00 PM", "1:00 PM", "2:00 PM",
@@ -37,14 +36,36 @@ const timeSlots = [
 ];
 
 const BookAppointment = () => {
+  const [searchParams] = useSearchParams();
+  const initialSpotFromQuery = searchParams.get("spot") || "";
   const [date, setDate] = useState<Date>();
   const [time, setTime] = useState("");
-  const [spot, setSpot] = useState("");
+  const [spot, setSpot] = useState(initialSpotFromQuery);
   const [matchUser, setMatchUser] = useState("");
   const [note, setNote] = useState("");
   const [submitted, setSubmitted] = useState(false);
   const { toast } = useToast();
-  const { userId } = useAuth();
+  const { userId, getToken } = useAuth();
+  const [matchedUsers, setMatchedUsers] = useState<MatchedUser[]>([]);
+  const [loadingMatches, setLoadingMatches] = useState(false);
+
+  const configuredApiUrl = import.meta.env.VITE_API_URL?.replace(/\/$/, "");
+  const baseUrl = import.meta.env.DEV ? "" : configuredApiUrl || "";
+
+  const parseApiError = async (res: Response, fallback = "Request failed") => {
+    const contentType = res.headers.get("content-type") || "";
+
+    if (contentType.includes("application/json")) {
+      const payload = await res.json().catch(() => ({}));
+      return payload?.message || fallback;
+    }
+
+    const text = await res.text().catch(() => "");
+    if (res.status === 404) {
+      return "API endpoint không tồn tại (404). Kiểm tra lại URL backend/proxy.";
+    }
+    return text?.trim().slice(0, 180) || `${fallback} (${res.status})`;
+  };
 
   // Use start of today so the calendar treats today as selectable
   const today = new Date();
@@ -54,6 +75,103 @@ const BookAppointment = () => {
   const [category, setCategory] = useState<string>("all");
   const [suggestions, setSuggestions] = useState<any[]>([]);
   const [loadingSuggest, setLoadingSuggest] = useState(false);
+  const [availableSpots, setAvailableSpots] = useState<DateSpotOption[]>([]);
+  const [loadingSpots, setLoadingSpots] = useState(false);
+
+  const buildAuthHeaders = async (withJsonContentType = false) => {
+    const token = await getToken();
+    const headers: Record<string, string> = {};
+
+    if (withJsonContentType) {
+      headers["Content-Type"] = "application/json";
+    }
+
+    if (token) {
+      headers.Authorization = `Bearer ${token}`;
+    }
+
+    if (userId) {
+      headers["x-clerk-id"] = userId;
+    }
+
+    return headers;
+  };
+
+  const toInitials = (name?: string) => {
+    if (!name) return "NA";
+    return name
+      .split(" ")
+      .filter(Boolean)
+      .slice(0, 2)
+      .map((part) => part[0]?.toUpperCase() || "")
+      .join("");
+  };
+
+  useEffect(() => {
+    const fetchDateSpots = async () => {
+      if (!userId) return;
+
+      setLoadingSpots(true);
+      try {
+        const headers = await buildAuthHeaders();
+        const res = await fetch(`${baseUrl}/api/date-spots?limit=100`, {
+          headers,
+          credentials: "include",
+        });
+
+        if (!res.ok) throw new Error(await parseApiError(res, "Không thể tải địa điểm"));
+
+        const payload = await res.json();
+        const mapped = (payload?.items || []).map((item: any) => ({
+          id: String(item._id),
+          name: item.name || "Unknown",
+          address: item.address || "",
+        }));
+
+        setAvailableSpots(mapped);
+      } catch (err: any) {
+        toast({ title: "Lỗi tải địa điểm", description: String(err?.message || err), variant: "destructive" });
+      } finally {
+        setLoadingSpots(false);
+      }
+    };
+
+    fetchDateSpots();
+  }, [userId, getToken]);
+
+  useEffect(() => {
+    const fetchMatchedUsers = async () => {
+      if (!userId) return;
+
+      setLoadingMatches(true);
+      try {
+        const headers = await buildAuthHeaders();
+
+        const res = await fetch(`${baseUrl}/api/users/connections`, {
+          headers,
+          credentials: "include",
+        });
+
+        if (!res.ok) throw new Error(await parseApiError(res, "Không thể tải danh sách match"));
+
+        const data = await res.json();
+        const mapped = (data?.matches || []).map((user: any) => ({
+          id: String(user.id),
+          name: user.name || "Unknown",
+          age: Number(user.age) || 20,
+          initials: toInitials(user.name),
+        }));
+
+        setMatchedUsers(mapped);
+      } catch (err: any) {
+        toast({ title: "Lỗi tải matches", description: String(err?.message || err), variant: "destructive" });
+      } finally {
+        setLoadingMatches(false);
+      }
+    };
+
+    fetchMatchedUsers();
+  }, [userId, getToken]);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -65,18 +183,26 @@ const BookAppointment = () => {
     const dateStr = format(date!, "yyyy-MM-dd");
     const startIso = makeISOFromTime(dateStr, time);
 
+    if (!/^[a-f\d]{24}$/i.test(spot)) {
+      toast({ title: "Địa điểm không hợp lệ", description: "Vui lòng chọn địa điểm từ danh sách.", variant: "destructive" });
+      return;
+    }
+
     if (!userId) {
       toast({ title: "Không xác thực", description: "Không có userId", variant: "destructive" });
       return;
     }
 
-    fetch(`/api/appointments`, {
+    buildAuthHeaders(true).then((headers) => {
+      return fetch(`${baseUrl}/api/appointments`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ userId, locationId: spot, startTime: startIso }),
+      headers,
+      credentials: "include",
+      body: JSON.stringify({ locationId: spot, startTime: startIso }),
+      });
     })
       .then(async (r) => {
-        if (!r.ok) throw new Error((await r.json()).message || "Failed to create");
+        if (!r.ok) throw new Error(await parseApiError(r, "Failed to create"));
         return r.json();
       })
       .then(() => {
@@ -105,12 +231,15 @@ const BookAppointment = () => {
 
     setLoadingSuggest(true);
     try {
-      const res = await fetch(`/api/appointments/suggest`, {
+      const headers = await buildAuthHeaders(true);
+
+      const res = await fetch(`${baseUrl}/api/appointments/suggest`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ userId, category: category === "all" ? "cafe" : category, budget: budget === "" ? 999999 : Number(budget), date: format(date, "yyyy-MM-dd") }),
+        headers,
+        credentials: "include",
+        body: JSON.stringify({ category: category === "all" ? "cafe" : category, budget: budget === "" ? 999999 : Number(budget), date: format(date, "yyyy-MM-dd") }),
       });
-      if (!res.ok) throw new Error((await res.json()).message || "Failed to fetch suggestions");
+      if (!res.ok) throw new Error(await parseApiError(res, "Failed to fetch suggestions"));
       const data = await res.json();
       setSuggestions(data);
     } catch (err: any) {
@@ -167,6 +296,11 @@ const BookAppointment = () => {
                 <CardDescription>Choose who you'd like to go on a date with</CardDescription>
               </CardHeader>
               <CardContent>
+                {loadingMatches ? (
+                  <p className="text-sm text-muted-foreground">Đang tải danh sách match...</p>
+                ) : matchedUsers.length === 0 ? (
+                  <p className="text-sm text-muted-foreground">Bạn chưa có match thành công để đặt lịch.</p>
+                ) : (
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                   {matchedUsers.map(user => (
                     <button
@@ -190,6 +324,7 @@ const BookAppointment = () => {
                     </button>
                   ))}
                 </div>
+                )}
               </CardContent>
             </Card>
 
@@ -204,11 +339,15 @@ const BookAppointment = () => {
                 <Select value={spot} onValueChange={setSpot}>
                   <SelectTrigger><SelectValue placeholder="Select a date spot" /></SelectTrigger>
                   <SelectContent>
-                    {spots.map(s => (
-                      <SelectItem key={s.id} value={String(s.id)}>{s.name} — {s.location}</SelectItem>
+                    {spot && !availableSpots.some((s) => s.id === spot) && (
+                      <SelectItem value={spot}>Địa điểm từ link hiện tại</SelectItem>
+                    )}
+                    {availableSpots.map((s) => (
+                      <SelectItem key={s.id} value={s.id}>{s.name}{s.address ? ` — ${s.address}` : ""}</SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
+                {loadingSpots && <p className="text-xs text-muted-foreground mt-2">Đang tải địa điểm...</p>}
               </CardContent>
             </Card>
 
@@ -255,7 +394,7 @@ const BookAppointment = () => {
                         </div>
                         <div className="flex flex-col gap-2">
                           <Button size="sm" onClick={() => {
-                            setSpot(s.location.id || s.location.id);
+                            setSpot(String(s.location?.id || ""));
                             // set time from ISO
                             const t = new Date(s.startTime);
                             const h = t.getHours();

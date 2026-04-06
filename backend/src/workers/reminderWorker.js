@@ -61,7 +61,7 @@ export function startReminderWorker() {
         try {
           // Fetch user email from raw collection (no model guaranteed)
           const usersColl = mongoose.connection.collection("users");
-          const userDoc = await usersColl.findOne({ _id: mongoose.Types.ObjectId(appt.userId) });
+          const userDoc = await usersColl.findOne({ _id: new mongoose.Types.ObjectId(appt.userId) });
           const toEmail = userDoc?.email;
 
           if (!toEmail) {
