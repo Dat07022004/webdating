@@ -1,4 +1,3 @@
-import "dotenv/config";
 import express from "express";
 import path from "path";
 import fs from "fs";
@@ -71,13 +70,14 @@ const io = initSocket(httpServer);
 
 const _dirname = path.resolve();
 
-console.log('Clerk Keys Loaded:', !!ENV.CLERK_SECRET_KEY, !!ENV.CLERK_PUBLISHABLE_KEY);
-
 app.use(express.json());
-app.use(clerkMiddleware({
-  secretKey: ENV.CLERK_SECRET_KEY,
-  publishableKey: ENV.CLERK_PUBLISHABLE_KEY,
-}));
+app.use(
+  clerkMiddleware({
+    secretKey: ENV.CLERK_SECRET_KEY,
+    publishableKey: ENV.CLERK_PUBLISHABLE_KEY,
+    clockSkewInMs: 60 * 1000 * 5, // 5 minutes leeway
+  }),
+); // adds auth access on req via req.auth()
 
 // Inngest requests require parsed JSON body.
 app.use("/api/inngest", serve({ client: inngest, functions }));

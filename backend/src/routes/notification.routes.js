@@ -7,10 +7,22 @@ import {
 } from '../controllers/notification.controller.js';
 import { requireAuth } from '@clerk/express';
 import { ENV } from '../config/env.js';
-import { resolveAuthContext } from '../middleware/auth.middleware.js';
 
 const authMiddleware = ENV.NODE_ENV === 'production' ? requireAuth() : (_req, _res, next) => next();
 const router = express.Router().use(authMiddleware);
+
+const resolveAuthContext = (req) => {
+    try {
+        const auth = typeof req.auth === 'function' ? req.auth() : req.auth;
+        return auth || null;
+    } catch (error) {
+        if (ENV.NODE_ENV !== 'production') {
+            console.warn('Auth resolution failed in development:', error?.message);
+            return null;
+        }
+        throw error;
+    }
+};
 
 const resolveClerkId = (req, auth) => req.user?.clerkId || auth?.userId || (ENV.NODE_ENV === 'production' ? undefined : req.headers?.['x-clerk-id'] || req.query?.clerkId || req.body?.clerkId);
 
