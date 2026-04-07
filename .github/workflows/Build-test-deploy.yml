@@ -1,189 +1,188 @@
-  name: Web Dating CI/CD
-  
-  on:
-    push:
-      branches: ["**"]
-    pull_request:
-      branches: ["main"]
-    workflow_dispatch:
-  
-  env:
-    NODE_VERSION: "20"
-  
-  permissions:
-    contents: read
-    packages: write
-  
-  concurrency:
-    group: web-dating-${{ github.workflow }}-${{ github.ref }}
-    cancel-in-progress: true
-  
-  jobs:
-    build:
-      name: Build
-      runs-on: ubuntu-latest
-  
-      steps:
-        - name: Checkout Code
-          uses: actions/checkout@v4
-  
-        - name: Setup Node.js
-          uses: actions/setup-node@v4
-          with:
-            node-version: ${{ env.NODE_VERSION }}
-            cache: "npm"
-            cache-dependency-path: |
-              backend/package-lock.json
-              frontend/package-lock.json
-  
-        - name: Backend - Install & Build
-          run: |
-            cd backend
-            npm ci
-            npm run build --if-present
-  
-        - name: Frontend - Install & Build
-          env:
-            VITE_CLERK_PUBLISHABLE_KEY: ${{ secrets.FRONTEND_VITE_CLERK_PUBLISHABLE_KEY }}
-            VITE_API_URL: ${{ secrets.FRONTEND_VITE_API_URL }}
-            VITE_SOCKET_URL: ${{ secrets.FRONTEND_VITE_SOCKET_URL }}
-          run: |
-            cd frontend
-            npm ci
-            npm run build
-  
-    test:
-      name: Test
-      runs-on: ubuntu-latest
-      needs: build
-  
-      steps:
-        - name: Checkout Code
-          uses: actions/checkout@v4
-  
-        - name: Setup Node.js
-          uses: actions/setup-node@v4
-          with:
-            node-version: ${{ env.NODE_VERSION }}
-            cache: "npm"
-            cache-dependency-path: |
-              backend/package-lock.json
-              frontend/package-lock.json
-  
-        - name: Backend - Install & Test
-          env:
-            NODE_ENV: test
-            PORT: 3000
-            DATABASE_URL: mongodb://localhost:27017/webdating-test
-            CLERK_PUBLISHABLE_KEY: pk_test_mock
-            CLERK_SECRET_KEY: sk_test_mock
-            INNGEST_SIGNING_KEY: sk_test_mock
-            CLOUDINARY_API_KEY: test
-            CLOUDINARY_API_SECRET: test
-            CLOUDINARY_CLOUD_NAME: test
-            MOMO_PARTNER_CODE: test
-            MOMO_ACCESS_KEY: test
-            MOMO_SECRET_KEY: test
-          run: |
-            cd backend
-            npm ci
-            npm run test:coverage
-  
-        - name: Frontend - Install & Test
-          env:
-            NODE_ENV: test
-            VITE_CLERK_PUBLISHABLE_KEY: pk_test_mock
-            VITE_API_URL: http://127.0.0.1:3000
-            VITE_SOCKET_URL: http://127.0.0.1:3000
-          run: |
-            cd frontend
-            npm ci
-            npm run test:coverage
-  
-        - name: Upload Coverage Report
-          if: always()
-          uses: actions/upload-artifact@v4
-          with:
-            name: full-coverage-report
-            path: |
-              backend/coverage/
-              frontend/coverage/
-            retention-days: 7
-  
-    deploy:
-      name: Deploy
-      runs-on: ubuntu-latest
-      needs: test
-      # Đã sửa lại chuẩn: Chỉ deploy khi có push thẳng (hoặc merge) vào main
-      if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-  
-      steps:
-        - name: Checkout Code
-          uses: actions/checkout@v4
-  
-        - name: Set registry owner lowercase
-          run: echo "REGISTRY_OWNER=$(echo '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')" >> $GITHUB_ENV
-          shell: bash
-  
-        - name: Set Docker Hub namespace lowercase
-          run: echo "DOCKERHUB_NAMESPACE=$(echo '${{ secrets.DOCKERHUB_USERNAME }}' | tr '[:upper:]' '[:lower:]')" >> $GITHUB_ENV
-          shell: bash
-  
-        - name: Log in to GHCR
-          uses: docker/login-action@v3
-          with:
-            registry: ghcr.io
-            username: ${{ github.actor }}
-            password: ${{ secrets.GITHUB_TOKEN }}
-  
-        - name: Log in to Docker Hub
-          uses: docker/login-action@v3
-          with:
-            username: ${{ secrets.DOCKERHUB_USERNAME }}
-            password: ${{ secrets.DOCKERHUB_TOKEN }}
-  
-        - name: Build Images with Docker Compose
-          env:
-            BACKEND_IMAGE: ghcr.io/${{ env.REGISTRY_OWNER }}/webdating-backend:${{ github.sha }}
-            FRONTEND_IMAGE: ghcr.io/${{ env.REGISTRY_OWNER }}/webdating-frontend:${{ github.sha }}
-            VITE_CLERK_PUBLISHABLE_KEY: ${{ secrets.FRONTEND_VITE_CLERK_PUBLISHABLE_KEY }}
-            VITE_API_URL: ${{ secrets.FRONTEND_VITE_API_URL }}
-            VITE_SOCKET_URL: ${{ secrets.FRONTEND_VITE_SOCKET_URL }}
-          run: docker compose -f docker-compose.yaml build backend frontend
-  
-        - name: Push SHA Tags and Retag Latest
-          env:
-            GHCR_BACKEND_IMAGE_SHA: ghcr.io/${{ env.REGISTRY_OWNER }}/webdating-backend:${{ github.sha }}
-            GHCR_FRONTEND_IMAGE_SHA: ghcr.io/${{ env.REGISTRY_OWNER }}/webdating-frontend:${{ github.sha }}
-            GHCR_BACKEND_IMAGE_LATEST: ghcr.io/${{ env.REGISTRY_OWNER }}/webdating-backend:latest
-            GHCR_FRONTEND_IMAGE_LATEST: ghcr.io/${{ env.REGISTRY_OWNER }}/webdating-frontend:latest
-            DOCKERHUB_BACKEND_IMAGE_SHA: docker.io/${{ env.DOCKERHUB_NAMESPACE }}/webdating-backend:${{ github.sha }}
-            DOCKERHUB_FRONTEND_IMAGE_SHA: docker.io/${{ env.DOCKERHUB_NAMESPACE }}/webdating-frontend:${{ github.sha }}
-            DOCKERHUB_BACKEND_IMAGE_LATEST: docker.io/${{ env.DOCKERHUB_NAMESPACE }}/webdating-backend:latest
-            DOCKERHUB_FRONTEND_IMAGE_LATEST: docker.io/${{ env.DOCKERHUB_NAMESPACE }}/webdating-frontend:latest
-          run: |
-            docker push "$GHCR_BACKEND_IMAGE_SHA"
-            docker push "$GHCR_FRONTEND_IMAGE_SHA"
-  
-            docker tag "$GHCR_BACKEND_IMAGE_SHA" "$GHCR_BACKEND_IMAGE_LATEST"
-            docker tag "$GHCR_FRONTEND_IMAGE_SHA" "$GHCR_FRONTEND_IMAGE_LATEST"
-  
-            docker push "$GHCR_BACKEND_IMAGE_LATEST"
-            docker push "$GHCR_FRONTEND_IMAGE_LATEST"
-  
-            docker tag "$GHCR_BACKEND_IMAGE_SHA" "$DOCKERHUB_BACKEND_IMAGE_SHA"
-            docker tag "$GHCR_FRONTEND_IMAGE_SHA" "$DOCKERHUB_FRONTEND_IMAGE_SHA"
-            docker tag "$GHCR_BACKEND_IMAGE_SHA" "$DOCKERHUB_BACKEND_IMAGE_LATEST"
-            docker tag "$GHCR_FRONTEND_IMAGE_SHA" "$DOCKERHUB_FRONTEND_IMAGE_LATEST"
-  
-            docker push "$DOCKERHUB_BACKEND_IMAGE_SHA"
-            docker push "$DOCKERHUB_FRONTEND_IMAGE_SHA"
-            docker push "$DOCKERHUB_BACKEND_IMAGE_LATEST"
-            docker push "$DOCKERHUB_FRONTEND_IMAGE_LATEST"
-  
-        - name: Trigger Sevalla Auto Deploy
-          run: |
-            echo "Triggering Backend..."
-            curl -X POST ${{ secrets.SEVALLA_BACKEND_WEBHOOK_URL }}
-            echo "Triggering Frontend..."
-            curl -X POST ${{ secrets.SEVALLA_FRONTEND_WEBHOOK_URL }}
+name: Web Dating CI/CD
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+    branches: ["main"]
+  workflow_dispatch:
+
+env:
+  NODE_VERSION: "20"
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: web-dating-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: "npm"
+          cache-dependency-path: |
+            backend/package-lock.json
+            frontend/package-lock.json
+
+      - name: Backend - Install & Build
+        run: |
+          cd backend
+          npm ci
+          npm run build --if-present
+
+      - name: Frontend - Install & Build
+        env:
+          VITE_CLERK_PUBLISHABLE_KEY: ${{ secrets.FRONTEND_VITE_CLERK_PUBLISHABLE_KEY }}
+          VITE_API_URL: ${{ secrets.FRONTEND_VITE_API_URL }}
+          VITE_SOCKET_URL: ${{ secrets.FRONTEND_VITE_SOCKET_URL }}
+        run: |
+          cd frontend
+          npm ci
+          npm run build
+
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    needs: build
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: "npm"
+          cache-dependency-path: |
+            backend/package-lock.json
+            frontend/package-lock.json
+
+      - name: Backend - Install & Test
+        env:
+          NODE_ENV: test
+          PORT: 3000
+          DATABASE_URL: mongodb://localhost:27017/webdating-test
+          CLERK_PUBLISHABLE_KEY: pk_test_mock
+          CLERK_SECRET_KEY: sk_test_mock
+          INNGEST_SIGNING_KEY: sk_test_mock
+          CLOUDINARY_API_KEY: test
+          CLOUDINARY_API_SECRET: test
+          CLOUDINARY_CLOUD_NAME: test
+          MOMO_PARTNER_CODE: test
+          MOMO_ACCESS_KEY: test
+          MOMO_SECRET_KEY: test
+        run: |
+          cd backend
+          npm ci
+          npm run test:coverage
+
+      - name: Frontend - Install & Test
+        env:
+          NODE_ENV: test
+          VITE_CLERK_PUBLISHABLE_KEY: pk_test_mock
+          VITE_API_URL: http://127.0.0.1:3000
+          VITE_SOCKET_URL: http://127.0.0.1:3000
+        run: |
+          cd frontend
+          npm ci
+          npm run test:coverage
+
+      - name: Upload Coverage Report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: full-coverage-report
+          path: |
+            backend/coverage/
+            frontend/coverage/
+          retention-days: 7
+
+  deploy:
+    name: Deploy
+    runs-on: ubuntu-latest
+    needs: test
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set registry owner lowercase
+        run: echo "REGISTRY_OWNER=$(echo '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')" >> $GITHUB_ENV
+        shell: bash
+
+      - name: Set Docker Hub namespace lowercase
+        run: echo "DOCKERHUB_NAMESPACE=$(echo '${{ secrets.DOCKERHUB_USERNAME }}' | tr '[:upper:]' '[:lower:]')" >> $GITHUB_ENV
+        shell: bash
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Build Images with Docker Compose
+        env:
+          BACKEND_IMAGE: ghcr.io/${{ env.REGISTRY_OWNER }}/webdating-backend:${{ github.sha }}
+          FRONTEND_IMAGE: ghcr.io/${{ env.REGISTRY_OWNER }}/webdating-frontend:${{ github.sha }}
+          VITE_CLERK_PUBLISHABLE_KEY: ${{ secrets.FRONTEND_VITE_CLERK_PUBLISHABLE_KEY }}
+          VITE_API_URL: ${{ secrets.FRONTEND_VITE_API_URL }}
+          VITE_SOCKET_URL: ${{ secrets.FRONTEND_VITE_SOCKET_URL }}
+        run: docker compose -f docker-compose.yaml build backend frontend
+
+      - name: Push SHA Tags and Retag Latest
+        env:
+          GHCR_BACKEND_IMAGE_SHA: ghcr.io/${{ env.REGISTRY_OWNER }}/webdating-backend:${{ github.sha }}
+          GHCR_FRONTEND_IMAGE_SHA: ghcr.io/${{ env.REGISTRY_OWNER }}/webdating-frontend:${{ github.sha }}
+          GHCR_BACKEND_IMAGE_LATEST: ghcr.io/${{ env.REGISTRY_OWNER }}/webdating-backend:latest
+          GHCR_FRONTEND_IMAGE_LATEST: ghcr.io/${{ env.REGISTRY_OWNER }}/webdating-frontend:latest
+          DOCKERHUB_BACKEND_IMAGE_SHA: docker.io/${{ env.DOCKERHUB_NAMESPACE }}/webdating-backend:${{ github.sha }}
+          DOCKERHUB_FRONTEND_IMAGE_SHA: docker.io/${{ env.DOCKERHUB_NAMESPACE }}/webdating-frontend:${{ github.sha }}
+          DOCKERHUB_BACKEND_IMAGE_LATEST: docker.io/${{ env.DOCKERHUB_NAMESPACE }}/webdating-backend:latest
+          DOCKERHUB_FRONTEND_IMAGE_LATEST: docker.io/${{ env.DOCKERHUB_NAMESPACE }}/webdating-frontend:latest
+        run: |
+          docker push "$GHCR_BACKEND_IMAGE_SHA"
+          docker push "$GHCR_FRONTEND_IMAGE_SHA"
+
+          docker tag "$GHCR_BACKEND_IMAGE_SHA" "$GHCR_BACKEND_IMAGE_LATEST"
+          docker tag "$GHCR_FRONTEND_IMAGE_SHA" "$GHCR_FRONTEND_IMAGE_LATEST"
+
+          docker push "$GHCR_BACKEND_IMAGE_LATEST"
+          docker push "$GHCR_FRONTEND_IMAGE_LATEST"
+
+          docker tag "$GHCR_BACKEND_IMAGE_SHA" "$DOCKERHUB_BACKEND_IMAGE_SHA"
+          docker tag "$GHCR_FRONTEND_IMAGE_SHA" "$DOCKERHUB_FRONTEND_IMAGE_SHA"
+          docker tag "$GHCR_BACKEND_IMAGE_SHA" "$DOCKERHUB_BACKEND_IMAGE_LATEST"
+          docker tag "$GHCR_FRONTEND_IMAGE_SHA" "$DOCKERHUB_FRONTEND_IMAGE_LATEST"
+
+          docker push "$DOCKERHUB_BACKEND_IMAGE_SHA"
+          docker push "$DOCKERHUB_FRONTEND_IMAGE_SHA"
+          docker push "$DOCKERHUB_BACKEND_IMAGE_LATEST"
+          docker push "$DOCKERHUB_FRONTEND_IMAGE_LATEST"
+
+      - name: Trigger Sevalla Auto Deploy
+        run: |
+          echo "Triggering Backend..."
+          curl -X POST ${{ secrets.SEVALLA_BACKEND_WEBHOOK_URL }}
+          echo "Triggering Frontend..."
+          curl -X POST ${{ secrets.SEVALLA_FRONTEND_WEBHOOK_URL }}
