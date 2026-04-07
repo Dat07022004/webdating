@@ -42,6 +42,7 @@ const formatCurrency = (value: number) =>
 export default function RevenueDashboard() {
   const { getToken } = useAuth();
   const navigate = useNavigate();
+  const apiBaseUrl = (import.meta.env.VITE_API_URL || "http://localhost:3000").replace(/\/$/, "");
 
   const [loading, setLoading] = useState(true);
   const [overview, setOverview] = useState<RevenueOverview | null>(null);
@@ -95,7 +96,7 @@ export default function RevenueDashboard() {
 
   const fetchOverview = async () => {
     const token = await getToken();
-    const res = await fetch("/api/revenue/overview", {
+    const res = await fetch(`${apiBaseUrl}/api/revenue/overview`, {
       headers: { Authorization: `Bearer ${token}` }
     });
 
@@ -115,7 +116,7 @@ export default function RevenueDashboard() {
 
   const fetchTransactions = async () => {
     const token = await getToken();
-    const res = await fetch(`/api/revenue/transactions?${queryString}`, {
+    const res = await fetch(`${apiBaseUrl}/api/revenue/transactions?${queryString}`, {
       headers: { Authorization: `Bearer ${token}` }
     });
 
