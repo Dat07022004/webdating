@@ -126,6 +126,7 @@ export default function Profile() {
   const [locationError, setLocationError] = useState("");
   const [coordinates, setCoordinates] = useState<{ lat: number; lng: number } | null>(null);
   const [isBlockListOpen, setIsBlockListOpen] = useState(false);
+  const apiBaseUrl = (import.meta.env.VITE_API_URL || "http://localhost:3000").replace(/\/$/, "");
 
   const activeProfile = isEditing ? draft : profile;
 
@@ -161,7 +162,7 @@ export default function Profile() {
           query.set("email", email);
         }
 
-        const response = await fetch(`/api/users/me?${query.toString()}`);
+        const response = await fetch(`${apiBaseUrl}/api/users/me?${query.toString()}`);
         const data = (await response.json().catch(() => ({}))) as {
           message?: string;
           profile?: ProfileData;
@@ -554,7 +555,7 @@ export default function Profile() {
       body.append("clerkId", user?.id || "");
       filesToUpload.forEach((file) => body.append("photos", file));
 
-      const response = await fetch("/api/users/photos/upload", {
+      const response = await fetch(`${apiBaseUrl}/api/users/photos/upload`, {
         method: "POST",
         body,
       });
@@ -599,7 +600,7 @@ export default function Profile() {
     setIsSaving(true);
 
     try {
-      const response = await fetch("/api/users/me", {
+      const response = await fetch(`${apiBaseUrl}/api/users/me`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
