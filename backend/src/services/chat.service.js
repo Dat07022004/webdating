@@ -39,10 +39,17 @@ export const getConversationsByClerkId = async ({ clerkId }) => {
         );
     }
 
-    const conversations = await Conversation.find({ 
-        participants: user._id,
-        participants: { $nin: blockedUserIds }
-    })
+    const conversationFilter = {
+        $and: [
+            { participants: user._id }
+        ]
+    };
+
+    if (blockedUserIds.length > 0) {
+        conversationFilter.$and.push({ participants: { $nin: blockedUserIds } });
+    }
+
+    const conversations = await Conversation.find(conversationFilter)
         .populate({
             path: 'participants',
             select: 'profile.personalInfo.name profile.avatarUrl status clerkId',
