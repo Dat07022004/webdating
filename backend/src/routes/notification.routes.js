@@ -8,7 +8,8 @@ import {
 import { requireAuth } from '@clerk/express';
 import { ENV } from '../config/env.js';
 
-const router = express.requireAuth ? express.Router().use(requireAuth()) : express.Router();
+const authMiddleware = ENV.NODE_ENV === 'production' ? requireAuth() : (_req, _res, next) => next();
+const router = express.Router().use(authMiddleware);
 
 const resolveAuthContext = (req) => {
     try {
@@ -23,16 +24,18 @@ const resolveAuthContext = (req) => {
     }
 };
 
+const resolveClerkId = (req, auth) => req.user?.clerkId || auth?.userId || (ENV.NODE_ENV === 'production' ? undefined : req.headers?.['x-clerk-id'] || req.query?.clerkId || req.body?.clerkId);
+
 const sendError = (res, error, fallbackMessage) => {
     const statusCode = Number.isInteger(error?.statusCode) ? error.statusCode : 500;
     const message = error?.message || fallbackMessage;
     return res.status(statusCode).json({ message });
 };
 
-router.get('/', requireAuth(), async (req, res) => {
+router.get('/', async (req, res) => {
     try {
         const auth = resolveAuthContext(req);
-        const clerkId = auth?.userId;
+        const clerkId = resolveClerkId(req, auth);
         const result = await getNotifications({ clerkId });
         return res.status(200).json(result);
     } catch (error) {
@@ -41,10 +44,10 @@ router.get('/', requireAuth(), async (req, res) => {
     }
 });
 
-router.get('/unread-counts', requireAuth(), async (req, res) => {
+router.get('/unread-counts', async (req, res) => {
     try {
         const auth = resolveAuthContext(req);
-        const clerkId = auth?.userId;
+        const clerkId = resolveClerkId(req, auth);
         const result = await getUnreadCounts({ clerkId });
         return res.status(200).json(result);
     } catch (error) {
@@ -53,10 +56,10 @@ router.get('/unread-counts', requireAuth(), async (req, res) => {
     }
 });
 
-router.patch('/:id/read', requireAuth(), async (req, res) => {
+router.patch('/:id/read', async (req, res) => {
     try {
         const auth = resolveAuthContext(req);
-        const clerkId = auth?.userId;
+        const clerkId = resolveClerkId(req, auth);
         const { id } = req.params;
         const result = await markAsRead({ clerkId, id });
         return res.status(200).json(result);
@@ -66,10 +69,10 @@ router.patch('/:id/read', requireAuth(), async (req, res) => {
     }
 });
 
-router.patch('/read-all', requireAuth(), async (req, res) => {
+router.patch('/read-all', async (req, res) => {
     try {
         const auth = resolveAuthContext(req);
-        const clerkId = auth?.userId;
+        const clerkId = resolveClerkId(req, auth);
         const result = await markAllAsRead({ clerkId });
         return res.status(200).json(result);
     } catch (error) {

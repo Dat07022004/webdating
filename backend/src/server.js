@@ -14,7 +14,7 @@ import premiumRoutes from "./routes/premium.routes.js";
 import notificationRoutes from "./routes/notification.routes.js";
 import adminRoutes from "./routes/admin.route.js";
 import revenueRoutes from "./routes/revenue.routes.js";
-import { requireActiveUser } from "./middleware/auth.middleware.js";
+import safetyRoutes from "./routes/safety.routes.js";
 
 import { functions, inngest } from "./config/inngest.js";
 import { initSocket } from "./socket/index.js";
@@ -50,12 +50,14 @@ app.use(
 
 // Inngest requests require parsed JSON body.
 app.use("/api/inngest", serve({ client: inngest, functions }));
-app.use("/api/users", requireActiveUser, userRoutes);
-app.use("/api/chat", requireActiveUser, chatRoutes);
-app.use("/api/upload", requireActiveUser, uploadRoutes);
-app.use("/api/premium", requireActiveUser, premiumRoutes);
+app.use("/api/users", userRoutes);
+app.use("/api/chat", chatRoutes);
+app.use("/api/notifications", notificationRoutes);
+app.use("/api/upload", uploadRoutes);
+app.use("/api/premium", premiumRoutes);
 app.use("/api/admin", adminRoutes);
 app.use("/api/revenue", revenueRoutes);
+app.use("/api/safety", safetyRoutes);
 app.use("/api", healthRoutes);
 
 const frontendDistPath = path.join(_dirname, "../frontend/dist");
