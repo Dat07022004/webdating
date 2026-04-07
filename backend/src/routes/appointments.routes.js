@@ -1,17 +1,28 @@
 import express from "express";
+import mongoose from "mongoose";
 import {
   suggestAppointments,
   createAppointment,
   getAppointmentsByUser,
   updateAppointment,
   cancelAppointment,
-  resolveUserObjectId,
-  ensureAppointmentOwner,
 } from "../services/appointment.service.js";
+import { Appointment } from "../models/appointments.model.js";
+import { User } from "../models/user.model.js";
 
 const router = express.Router();
 
 const getAuth = (req) => (typeof req.auth === "function" ? req.auth() : req.auth);
+
+const resolveUserObjectId = async (candidate) => {
+  if (!candidate) return null;
+
+  const raw = String(candidate);
+  if (mongoose.Types.ObjectId.isValid(raw)) return raw;
+
+  const user = await User.findOne({ clerkId: raw }).select("_id").lean();
+  return user?._id?.toString() || null;
+};
 
 /**
  * POST /api/appointments/suggest
@@ -106,7 +117,10 @@ router.patch("/:id", async (req, res) => {
     if (!requesterObjectId) return res.status(404).json({ message: "User not found" });
 
     const { id } = req.params;
-    await ensureAppointmentOwner({ appointmentId: id, requesterObjectId });
+
+    const appt = await Appointment.findById(id).lean();
+    if (!appt) return res.status(404).json({ message: "Appointment not found" });
+    if (appt.userId?.toString() !== requesterObjectId) return res.status(403).json({ message: "Forbidden" });
 
     const updates = req.body;
     const saved = await updateAppointment(id, updates);
@@ -132,7 +146,10 @@ router.delete("/:id", async (req, res) => {
     if (!requesterObjectId) return res.status(404).json({ message: "User not found" });
 
     const { id } = req.params;
-    await ensureAppointmentOwner({ appointmentId: id, requesterObjectId });
+
+    const appt = await Appointment.findById(id).lean();
+    if (!appt) return res.status(404).json({ message: "Appointment not found" });
+    if (appt.userId?.toString() !== requesterObjectId) return res.status(403).json({ message: "Forbidden" });
 
     const saved = await cancelAppointment(id);
     return res.status(200).json({ message: "Appointment cancelled", data: saved });

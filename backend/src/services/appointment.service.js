@@ -149,7 +149,7 @@ export async function validateBooking({ userId, selectedTime }) {
   return true;
 }
 
-export async function createAppointment({ userId, locationId, startTime, totalCost }) {
+export async function createAppointment({ userId, locationId, startTime, totalCost, note }) {
   if (!userId || !locationId || !startTime) {
     throw createServiceError(400, 'Missing required fields');
   }
@@ -188,6 +188,7 @@ export async function createAppointment({ userId, locationId, startTime, totalCo
         userId: new mongoose.Types.ObjectId(userId),
         locationId: location._id,
         startTime: start,
+        note: typeof note === 'string' ? note.trim().slice(0, 300) : '',
         totalCost: totalCost ?? location.averagePrice,
       },
     ], { session });
