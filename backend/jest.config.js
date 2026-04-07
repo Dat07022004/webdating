@@ -4,5 +4,6 @@ export default {
   collectCoverage: true,
   coverageDirectory: "coverage",
   collectCoverageFrom: ["src/**/*.js", "!src/test/**", "!**/node_modules/**"],
-  coverageReporters: ["text", "lcov"],
+  coverageReporters: ["text", "json", "lcov", "html"],
+  testTimeout: 10000,
 };

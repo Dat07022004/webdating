@@ -1,4 +1,4 @@
-import "@testing-library/jest-dom";
+import "@testing-library/jest-dom/vitest";
 import { vi } from "vitest";
 import React from "react";
 
@@ -17,6 +17,7 @@ vi.mock("@clerk/clerk-react", () => {
       isSignedIn: true,
       userId: "user_123",
       sessionId: "session_123",
+      getToken: vi.fn(async () => "mock_token"),
     }),
     ClerkProvider: ({ children }: { children: React.ReactNode }) => children,
     SignIn: () => React.createElement("div", null, "Mock SignIn Component"),
@@ -48,3 +49,44 @@ class MockObserver {
 }
 vi.stubGlobal("IntersectionObserver", MockObserver);
 vi.stubGlobal("ResizeObserver", MockObserver);
+
+vi.stubGlobal(
+  "fetch",
+  vi.fn(async (input: RequestInfo | URL) => {
+    const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : String(input);
+
+    if (url.includes("/api/notifications/unread-counts")) {
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({ notificationCount: 0, messageCount: 0 }),
+        text: async () => "",
+      };
+    }
+
+    if (url.includes("/api/notifications")) {
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({ notifications: [] }),
+        text: async () => "",
+      };
+    }
+
+    if (url.includes("/api/users/me")) {
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({ profile: null }),
+        text: async () => "",
+      };
+    }
+
+    return {
+      ok: true,
+      status: 200,
+      json: async () => ({}),
+      text: async () => "",
+    };
+  }),
+);

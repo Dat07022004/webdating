@@ -14,6 +14,8 @@ export const ENV = {
     NODE_ENV: process.env.NODE_ENV,
     PORT: process.env.PORT,
     DATABASE_URL: process.env.DATABASE_URL,
+    ALLOWED_ORIGINS: process.env.ALLOWED_ORIGINS,
+    FRONTEND_URL: process.env.FRONTEND_URL,
     CLERK_PUBLISHABLE_KEY: process.env.CLERK_PUBLISHABLE_KEY,
     CLERK_SECRET_KEY: process.env.CLERK_SECRET_KEY,
     INNGEST_SIGNING_KEY: process.env.INNGEST_SIGNING_KEY,

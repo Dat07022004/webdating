@@ -1,5 +1,7 @@
 import mongoose from 'mongoose';
 import { Appointment, Location } from '../models/appointments.model.js';
+import { Review } from '../models/review.model.js';
+import { User } from '../models/user.model.js';
 import { sendMail } from '../lib/mailer.js';
 
 /**
@@ -112,6 +114,7 @@ export async function validateBooking({ userId, selectedTime }) {
   if (sel.getTime() < now.getTime()) {
     const err = new Error('Không thể chọn thời gian trong quá khứ');
     err.status = 400;
+    err.statusCode = 400;
     throw err;
   }
 
@@ -135,6 +138,7 @@ export async function validateBooking({ userId, selectedTime }) {
   if (existing) {
     const err = new Error('Bạn đang có một lịch hẹn chưa hoàn thành');
     err.status = 409;
+    err.statusCode = 409;
     throw err;
   }
 
@@ -168,6 +172,7 @@ export async function createAppointment({ userId, locationId, startTime, totalCo
     if (conflict) {
       const err = new Error('Time slot occupied');
       err.status = 409;
+      err.statusCode = 409;
       throw err;
     }
 
@@ -232,6 +237,7 @@ export async function updateAppointment(id, { startTime, status }) {
     if (conflict) {
       const err = new Error('Time slot occupied');
       err.status = 409;
+      err.statusCode = 409;
       throw err;
     }
 
@@ -271,4 +277,206 @@ export async function cancelAppointment(id) {
   }
 
   return saved;
+}
+
+function createServiceError(status, message) {
+  const err = new Error(message);
+  err.status = status;
+  err.statusCode = status;
+  return err;
+}
+
+function parsePositiveNumber(value, fallback) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+}
+
+export async function resolveUserObjectId(candidate) {
+  if (!candidate) return null;
+
+  const raw = String(candidate);
+  if (mongoose.Types.ObjectId.isValid(raw)) return raw;
+
+  const user = await User.findOne({ clerkId: raw }).select('_id').lean();
+  return user?._id?.toString() || null;
+}
+
+export async function ensureAppointmentOwner({ appointmentId, requesterObjectId }) {
+  const appt = await Appointment.findById(appointmentId).lean();
+  if (!appt) {
+    throw createServiceError(404, 'Appointment not found');
+  }
+
+  if (String(appt.userId) !== String(requesterObjectId)) {
+    throw createServiceError(403, 'Forbidden');
+  }
+
+  return appt;
+}
+
+export async function getDateSpotsWithRatings(query = {}) {
+  const { search = '', category, budget } = query;
+  const page = parsePositiveNumber(query.page, 1);
+  const limit = Math.min(parsePositiveNumber(query.limit, 12), 50);
+  const skip = (page - 1) * limit;
+
+  const match = {};
+  if (category && category !== 'all') {
+    match.category = category;
+  }
+
+  if (budget != null && budget !== '') {
+    const parsedBudget = Number(budget);
+    if (!Number.isFinite(parsedBudget)) {
+      throw createServiceError(400, 'Invalid budget');
+    }
+    match.averagePrice = { $lte: parsedBudget };
+  }
+
+  if (search && String(search).trim()) {
+    const q = String(search).trim();
+    match.$or = [
+      { name: { $regex: q, $options: 'i' } },
+      { address: { $regex: q, $options: 'i' } }
+    ];
+  }
+
+  const pipeline = [
+    { $match: match },
+    {
+      $lookup: {
+        from: 'reviews',
+        let: { locationId: '$_id' },
+        pipeline: [
+          {
+            $match: {
+              $expr: {
+                $and: [
+                  { $eq: ['$locationId', '$$locationId'] },
+                  { $eq: ['$status', 'published'] }
+                ]
+              }
+            }
+          },
+          {
+            $group: {
+              _id: null,
+              averageRating: { $avg: '$rating' },
+              totalReviews: { $sum: 1 }
+            }
+          }
+        ],
+        as: 'reviewStats'
+      }
+    },
+    {
+      $addFields: {
+        averageRating: {
+          $ifNull: [{ $arrayElemAt: ['$reviewStats.averageRating', 0] }, 0]
+        },
+        totalReviews: {
+          $ifNull: [{ $arrayElemAt: ['$reviewStats.totalReviews', 0] }, 0]
+        }
+      }
+    },
+    {
+      $project: {
+        reviewStats: 0
+      }
+    },
+    { $sort: { averageRating: -1, totalReviews: -1, createdAt: -1 } },
+    { $skip: skip },
+    { $limit: limit }
+  ];
+
+  const [items, total] = await Promise.all([
+    Location.aggregate(pipeline),
+    Location.countDocuments(match)
+  ]);
+
+  return {
+    items,
+    pagination: {
+      page,
+      limit,
+      total,
+      totalPages: Math.ceil(total / limit) || 1
+    }
+  };
+}
+
+export async function getPublishedReviewsByLocation(locationId) {
+  if (!mongoose.Types.ObjectId.isValid(locationId)) {
+    throw createServiceError(400, 'Invalid location id');
+  }
+
+  return Review.find({
+    locationId: new mongoose.Types.ObjectId(locationId),
+    status: 'published'
+  })
+    .sort({ createdAt: -1 })
+    .limit(50)
+    .lean();
+}
+
+async function getUserByClerkId(clerkId) {
+  if (!clerkId) return null;
+  return User.findOne({ clerkId }).select('_id clerkId').lean();
+}
+
+export async function createReviewByClerkId({ clerkId, payload }) {
+  const currentUser = await getUserByClerkId(clerkId);
+  if (!currentUser) throw createServiceError(401, 'Unauthorized');
+
+  const { appointmentId, rating, tags, comment, wouldMeetAgain, revieweeUserId } = payload || {};
+  if (!appointmentId) throw createServiceError(400, 'appointmentId is required');
+
+  if (!mongoose.Types.ObjectId.isValid(appointmentId)) {
+    throw createServiceError(400, 'Invalid appointmentId');
+  }
+
+  const normalizedRating = Number(rating);
+  if (!Number.isFinite(normalizedRating) || normalizedRating < 1 || normalizedRating > 5) {
+    throw createServiceError(400, 'rating must be from 1 to 5');
+  }
+
+  const appointment = await Appointment.findById(appointmentId).lean();
+  if (!appointment) throw createServiceError(404, 'Appointment not found');
+
+  if (String(appointment.userId) !== String(currentUser._id)) {
+    throw createServiceError(403, 'Forbidden');
+  }
+
+  if (new Date(appointment.startTime).getTime() > Date.now()) {
+    throw createServiceError(400, 'Cannot review before appointment time');
+  }
+
+  const existing = await Review.findOne({ appointmentId: appointment._id }).lean();
+  if (existing) {
+    throw createServiceError(409, 'Review already exists for this appointment');
+  }
+
+  return Review.create({
+    appointmentId: appointment._id,
+    locationId: appointment.locationId,
+    reviewerUserId: currentUser._id,
+    revieweeUserId:
+      revieweeUserId && mongoose.Types.ObjectId.isValid(revieweeUserId)
+        ? new mongoose.Types.ObjectId(revieweeUserId)
+        : null,
+    rating: normalizedRating,
+    tags: Array.isArray(tags) ? tags.filter(Boolean).slice(0, 10) : [],
+    comment: typeof comment === 'string' ? comment.trim().slice(0, 500) : '',
+    wouldMeetAgain: typeof wouldMeetAgain === 'boolean' ? wouldMeetAgain : null
+  });
+}
+
+export async function getMyReviewsByClerkId(clerkId) {
+  const currentUser = await getUserByClerkId(clerkId);
+  if (!currentUser) throw createServiceError(401, 'Unauthorized');
+
+  return Review.find({ reviewerUserId: currentUser._id })
+    .populate('locationId', 'name address category')
+    .sort({ createdAt: -1 })
+    .lean();
 }

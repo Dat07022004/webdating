@@ -17,6 +17,18 @@ const upload = multer({
   }
 });
 
-router.post('/image', requireActiveUser, upload.single('image'), uploadImage);
+router.post('/image', requireActiveUser, upload.single('image'), async (req, res) => {
+  try {
+    const result = await uploadImage({ file: req.file });
+    return res.status(200).json({
+      success: true,
+      data: result
+    });
+  } catch (error) {
+    console.error('uploadImage error:', error);
+    const statusCode = Number.isInteger(error?.statusCode) ? error.statusCode : 500;
+    return res.status(statusCode).json({ success: false, message: error?.message || 'Image upload failed' });
+  }
+});
 
 export default router;

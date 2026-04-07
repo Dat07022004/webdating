@@ -13,12 +13,13 @@ export default defineConfig({
   test: {
     globals: true,
     environment: "jsdom",
+    pool: "forks",
     setupFiles: "./src/test/setup.ts",
     coverage: {
       provider: "v8",
       include: ["src/**/*.{ts,tsx}"],
       exclude: ["src/main.tsx", "src/vite-env.d.ts", "src/test/**"],
-      reporter: ["text", "json", "html"],
+      reporter: ["text", "json", "html", "lcov"],
       reportsDirectory: "./coverage",
     },
   },

@@ -1,20 +1,118 @@
+import { User } from '../models/user.model.js';
 import { ENV } from '../config/env.js';
+import { isUserActivelyBanned } from '../services/admin.service.js';
 
-export const requireActiveUser = (req, res, next) => {
-  const auth = typeof req.auth === 'function' ? req.auth() : req.auth;
-  const fallbackClerkId = ENV.NODE_ENV === 'production'
-    ? undefined
-    : req.headers['x-clerk-id'] || req.query?.clerkId || req.body?.clerkId;
+export const resolveAuthContext = (req) => {
+    try {
+        const auth = typeof req.auth === 'function' ? req.auth() : req.auth;
+        return auth || null;
+    } catch (error) {
+        if (ENV.NODE_ENV !== 'production') {
+            console.warn('Auth resolution failed in development, using fallback clerkId when provided:', error?.message || error);
+            return null;
+        }
+        throw error;
+    }
+};
 
-  const userId = auth?.userId || (typeof fallbackClerkId === 'string' ? fallbackClerkId : undefined);
+const resolveClerkIdFromRequest = (req, auth) => {
+    const fallbackClerkId = ENV.NODE_ENV === 'production'
+        ? undefined
+        : req.headers?.['x-clerk-id'] || req.body?.clerkId || req.query?.clerkId;
+    return auth?.userId || fallbackClerkId;
+};
 
-  if (!auth?.userId && userId) {
-    req.auth = () => ({ userId });
-  }
+const resolveActiveUserByClerkId = async (clerkId) => {
+    const user = await User.findOne({ clerkId });
+    if (!user) {
+        return { error: { status: 404, message: 'User not found' } };
+    }
 
-  if (!userId) {
-    return res.status(401).json({ message: 'Unauthorized' });
-  }
+    const activeBan = await isUserActivelyBanned(user._id);
+    if (activeBan) {
+        return { error: { status: 403, message: 'Forbidden: Account is banned' } };
+    }
 
-  return next();
+    return { user };
+};
+
+export const requireActiveUser = async (req, res, next) => {
+    try {
+        const auth = resolveAuthContext(req);
+        // Allow fallback primarily for dev testing
+        const clerkId = resolveClerkIdFromRequest(req, auth);
+
+        if (!clerkId) {
+            return res.status(401).json({ message: 'Unauthorized: No valid session' });
+        }
+
+        const result = await resolveActiveUserByClerkId(clerkId);
+        if (result.error) {
+            return res.status(result.error.status).json({ message: result.error.message });
+        }
+
+        req.user = result.user;
+        next();
+    } catch (error) {
+        console.error('requireActiveUser error:', error);
+        res.status(500).json({ message: 'Server error checking user account status' });
+    }
+};
+
+export const requireAdmin = async (req, res, next) => {
+    try {
+        const auth = resolveAuthContext(req);
+        // Allow fallback primarily for dev testing
+        const clerkId = resolveClerkIdFromRequest(req, auth);
+
+        if (!clerkId) {
+            return res.status(401).json({ message: 'Unauthorized: No valid session' });
+        }
+
+        const result = await resolveActiveUserByClerkId(clerkId);
+        if (result.error) {
+            return res.status(result.error.status).json({ message: result.error.message });
+        }
+
+        const user = result.user;
+
+        if (user.role !== 'admin') {
+            return res.status(403).json({ message: 'Forbidden: Requires admin role' });
+        }
+
+        req.user = user;
+        next();
+    } catch (error) {
+        console.error('requireAdmin error:', error);
+        res.status(500).json({ message: 'Server error checking admin role' });
+    }
+};
+
+export const requireManagerOrAdmin = async (req, res, next) => {
+    try {
+        const auth = resolveAuthContext(req);
+        // Allow fallback primarily for dev testing
+        const clerkId = resolveClerkIdFromRequest(req, auth);
+
+        if (!clerkId) {
+            return res.status(401).json({ message: 'Unauthorized: No valid session' });
+        }
+
+        const result = await resolveActiveUserByClerkId(clerkId);
+        if (result.error) {
+            return res.status(result.error.status).json({ message: result.error.message });
+        }
+
+        const user = result.user;
+
+        if (!['manager', 'admin'].includes(user.role)) {
+            return res.status(403).json({ message: 'Forbidden: Requires manager or admin role' });
+        }
+
+        req.user = user;
+        next();
+    } catch (error) {
+        console.error('requireManagerOrAdmin error:', error);
+        res.status(500).json({ message: 'Server error checking manager role' });
+    }
 };

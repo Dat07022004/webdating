@@ -1,6 +1,7 @@
 import * as clerkExpress from '@clerk/express';
 import { ENV } from '../config/env.js';
 import { User } from '../models/user.model.js';
+import { isUserActivelyBanned } from '../services/admin.service.js';
 
 const verifyToken = clerkExpress.verifyToken;
 
@@ -43,6 +44,11 @@ export async function socketAuthMiddleware(socket, next) {
 
     if (!user) {
       return next(new Error('SOCKET_AUTH_ERROR: User not found'));
+    }
+
+    const activeBan = await isUserActivelyBanned(user._id);
+    if (activeBan) {
+      return next(new Error('SOCKET_AUTH_ERROR: Account is banned'));
     }
 
     // Gắn thông tin user vào socket để dùng trong handlers

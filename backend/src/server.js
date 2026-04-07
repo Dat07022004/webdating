@@ -22,7 +22,6 @@ import { functions, inngest } from './config/inngest.js';
 import { startReminderWorker } from './workers/reminderWorker.js';
 import { initSocket } from './socket/index.js';
 import cors from 'cors';
-// Note: imports deduplicated to avoid redeclaration errors
 
 const app = express();
 const defaultAllowedOrigins = [
@@ -70,7 +69,7 @@ const corsOptions = {
 app.use(cors(corsOptions));
 app.options("/{*path}", cors(corsOptions));
 const httpServer = http.createServer(app);
-const io = initSocket(httpServer);
+initSocket(httpServer);
 
 const _dirname = path.resolve();
 
@@ -92,7 +91,7 @@ app.use('/api', healthRoutes);
 app.use('/api/users', requireActiveUser, userRoutes);
 app.use('/api/chat', requireActiveUser, chatRoutes);
 app.use('/api/upload', requireActiveUser, uploadRoutes);
-app.use('/api/premium', requireActiveUser, premiumRoutes);
+app.use('/api/premium', premiumRoutes);
 app.use('/api/appointments', requireActiveUser, appointmentsRoutes);
 app.use('/api/date-spots', requireActiveUser, dateSpotsRoutes);
 app.use('/api/reviews', requireActiveUser, reviewRoutes);
@@ -101,7 +100,6 @@ app.use('/api/reviews', requireActiveUser, reviewRoutes);
 app.use('/api/notifications', notificationRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/revenue', revenueRoutes);
-
 const frontendDistPath = path.join(_dirname, "../frontend/dist");
 // Only serve frontend if the front end build actually exists
 if (fs.existsSync(path.join(frontendDistPath, "index.html"))) {
