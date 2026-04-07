@@ -30,7 +30,7 @@ export function BlockListDialog({ isOpen, onClose }: BlockListDialogProps) {
     try {
       setIsLoading(true);
       const token = await getToken();
-      const baseUrl = import.meta.env.VITE_API_URL?.replace(/\/$/, "") || "http://localhost:3000";
+      const baseUrl = (import.meta.env.VITE_API_URL || "").replace(/\/$/, "");
       
       const res = await fetch(`${baseUrl}/api/safety/blocked-list`, {
         headers: {
@@ -53,7 +53,7 @@ export function BlockListDialog({ isOpen, onClose }: BlockListDialogProps) {
     try {
       setUnblockingId(userId);
       const token = await getToken();
-      const baseUrl = import.meta.env.VITE_API_URL?.replace(/\/$/, "") || "http://localhost:3000";
+      const baseUrl = (import.meta.env.VITE_API_URL || "").replace(/\/$/, "");
       
       const res = await fetch(`${baseUrl}/api/safety/unblock`, {
         method: "POST",

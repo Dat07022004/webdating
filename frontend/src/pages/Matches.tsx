@@ -121,7 +121,7 @@ export default function Matches() {
     if (!reportTarget) return;
     try {
       const token = await getToken();
-      const baseUrl = import.meta.env.VITE_API_URL || "http://localhost:3000";
+      const baseUrl = (import.meta.env.VITE_API_URL || "").replace(/\/$/, "");
       const res = await fetch(`${baseUrl}/api/safety/report`, {
         method: "POST",
         headers: {
@@ -140,6 +140,13 @@ export default function Matches() {
           title: "Report submitted",
           description: "Thank you for your feedback. We will review it shortly.",
         });
+      } else {
+        const data = await res.json().catch(() => ({}));
+        toast({
+          title: "Report failed",
+          description: data.message || "Could not submit report. Please try again.",
+          variant: "destructive",
+        });
       }
     } catch (error) {
       console.error("Report error:", error);
@@ -150,7 +157,7 @@ export default function Matches() {
     if (!blockTarget) return;
     try {
       const token = await getToken();
-      const baseUrl = import.meta.env.VITE_API_URL || "http://localhost:3000";
+      const baseUrl = (import.meta.env.VITE_API_URL || "").replace(/\/$/, "");
       const res = await fetch(`${baseUrl}/api/safety/block`, {
         method: "POST",
         headers: {
@@ -167,7 +174,15 @@ export default function Matches() {
           title: "User blocked",
           description: "User has been removed from your matches.",
         });
-        fetchConnections(); // Refresh list to remove blocked user
+        setBlockTarget(null);
+        fetchConnections();
+      } else {
+        const data = await res.json().catch(() => ({}));
+        toast({
+          title: "Block failed",
+          description: data.message || "Could not block user. Please try again.",
+          variant: "destructive",
+        });
       }
     } catch (error) {
       console.error("Block error:", error);

@@ -31,12 +31,14 @@ export const submitReport = async ({ clerkId, reportedId, reason, description })
         throw createError(400, 'Cannot report yourself');
     }
 
-    const targetExists = await User.exists({ _id: reportedId });
+    const reportedObjectId = new mongoose.Types.ObjectId(reportedId);
+
+    const targetExists = await User.exists({ _id: reportedObjectId });
     if (!targetExists) throw createError(404, 'Reported user not found');
 
     const report = new Report({
         reporterId: currentUser._id,
-        reportedId,
+        reportedId: reportedObjectId,
         reason,
         description: description || 'No description provided',
     });
@@ -56,20 +58,22 @@ export const blockUserById = async ({ clerkId, blockedId }) => {
     const targetExists = await User.exists({ _id: blockedId });
     if (!targetExists) throw createError(404, 'User to block not found');
 
+    const blockedObjectId = new mongoose.Types.ObjectId(blockedId);
+
     await UserBlocked.findOneAndUpdate(
-        { blockerId: currentUser._id, blockedId },
-        { blockerId: currentUser._id, blockedId },
-        { upsert: true }
+        { blockerId: currentUser._id, blockedId: blockedObjectId },
+        { $set: { blockerId: currentUser._id, blockedId: blockedObjectId } },
+        { upsert: true, new: true }
     );
 
     await Connection.updateMany(
         {
             $or: [
-                { senderId: currentUser._id, receiverId: blockedId },
-                { senderId: blockedId, receiverId: currentUser._id },
+                { senderId: currentUser._id, receiverId: blockedObjectId },
+                { senderId: blockedObjectId, receiverId: currentUser._id },
             ],
         },
-        { status: 'blocked' }
+        { $set: { status: 'blocked' } }
     );
 
     return { success: true, message: 'User blocked successfully' };
@@ -79,12 +83,14 @@ export const unblockUserById = async ({ clerkId, blockedId }) => {
     assertObjectId(blockedId, 'blockedId');
     const currentUser = await resolveCurrentUser(clerkId);
 
-    await UserBlocked.findOneAndDelete({ blockerId: currentUser._id, blockedId });
+    const blockedObjectId = new mongoose.Types.ObjectId(blockedId);
+
+    await UserBlocked.findOneAndDelete({ blockerId: currentUser._id, blockedId: blockedObjectId });
 
     await Connection.deleteMany({
         $or: [
-            { senderId: currentUser._id, receiverId: blockedId },
-            { senderId: blockedId, receiverId: currentUser._id },
+            { senderId: currentUser._id, receiverId: blockedObjectId },
+            { senderId: blockedObjectId, receiverId: currentUser._id },
         ],
         status: 'blocked',
     });
