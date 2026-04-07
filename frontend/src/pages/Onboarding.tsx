@@ -84,6 +84,7 @@ export default function Onboarding() {
   });
   const navigate = useNavigate();
   const { user } = useUser();
+  const apiBaseUrl = (import.meta.env.VITE_API_URL || "http://localhost:3000").replace(/\/$/, "");
 
   const selectedProvince = useMemo(
     () => provinces.find((province) => province.province_code === selectedProvinceCode) || null,
@@ -179,7 +180,7 @@ export default function Onboarding() {
         bio: formData.bio,
       };
 
-      const response = await fetch("/api/users/onboarding", {
+      const response = await fetch(`${apiBaseUrl}/api/users/onboarding`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -396,7 +397,7 @@ export default function Onboarding() {
       body.append("clerkId", user?.id || "");
       filesToUpload.forEach((file) => body.append("photos", file));
 
-      const response = await fetch("/api/users/photos/upload", {
+      const response = await fetch(`${apiBaseUrl}/api/users/photos/upload`, {
         method: "POST",
         body,
       });
