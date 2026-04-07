@@ -2,6 +2,7 @@ import { Router } from 'express';
 import multer from 'multer';
 import { ENV } from '../config/env.js';
 import { getMyProfile, onboardUser, updateMyProfile, uploadUserPhotos, getDiscoverUsers, handleUserAction, getConnections } from '../controllers/user.controller.js';
+import { requireActiveUser} from '../middleware/auth.middleware.js';
 
 const router = Router();
 const upload = multer({
@@ -26,6 +27,8 @@ const resolveAuthContext = (req) => {
 	}
 };
 
+const resolveClerkId = (req, auth) => req.user?.clerkId || auth?.userId || (ENV.NODE_ENV === 'production' ? undefined : req.headers?.['x-clerk-id'] || req.body?.clerkId || req.query?.clerkId);
+
 const sendError = (res, error, fallbackMessage) => {
 	const statusCode = Number.isInteger(error?.statusCode) ? error.statusCode : 500;
 	const message = error?.message || fallbackMessage;
@@ -35,8 +38,7 @@ const sendError = (res, error, fallbackMessage) => {
 router.post('/onboarding', async (req, res) => {
 	try {
 		const auth = resolveAuthContext(req);
-		const fallbackClerkId = ENV.NODE_ENV === 'production' ? undefined : req.body?.clerkId;
-		const clerkId = auth?.userId || fallbackClerkId;
+			const clerkId = resolveClerkId(req, auth);
 		const result = await onboardUser({ clerkId, auth, body: req.body });
 		return res.status(200).json(result);
 	} catch (error) {
@@ -48,8 +50,7 @@ router.post('/onboarding', async (req, res) => {
 router.post('/photos/upload', upload.array('photos', 6), async (req, res) => {
 	try {
 		const auth = resolveAuthContext(req);
-		const fallbackClerkId = ENV.NODE_ENV === 'production' ? undefined : req.body?.clerkId;
-		const clerkId = auth?.userId || fallbackClerkId;
+			const clerkId = resolveClerkId(req, auth);
 		const result = await uploadUserPhotos({ clerkId, files: req.files || [] });
 		return res.status(200).json(result);
 	} catch (error) {
@@ -58,12 +59,16 @@ router.post('/photos/upload', upload.array('photos', 6), async (req, res) => {
 	}
 });
 
+router.use('/me', requireActiveUser);
+router.use('/discover', requireActiveUser);
+router.use('/action', requireActiveUser);
+router.use('/connections', requireActiveUser);
+
 router.get('/me', async (req, res) => {
 	try {
 		const auth = resolveAuthContext(req);
-		const fallbackClerkId = ENV.NODE_ENV === 'production' ? undefined : req.query?.clerkId;
-		const clerkId = auth?.userId || fallbackClerkId;
-		const email = auth?.sessionClaims?.email || req.query?.email;
+			const clerkId = resolveClerkId(req, auth);
+			const email = req.user?.email || auth?.sessionClaims?.email || req.query?.email;
 		const result = await getMyProfile({ clerkId, email });
 		return res.status(200).json(result);
 	} catch (error) {
@@ -75,9 +80,8 @@ router.get('/me', async (req, res) => {
 router.put('/me', async (req, res) => {
 	try {
 		const auth = resolveAuthContext(req);
-		const fallbackClerkId = ENV.NODE_ENV === 'production' ? undefined : req.body?.clerkId;
-		const clerkId = auth?.userId || fallbackClerkId;
-		const email = auth?.sessionClaims?.email || req.body?.email;
+			const clerkId = resolveClerkId(req, auth);
+			const email = req.user?.email || auth?.sessionClaims?.email || req.body?.email;
 		const result = await updateMyProfile({ clerkId, email, body: req.body || {} });
 		return res.status(200).json(result);
 	} catch (error) {
@@ -89,7 +93,7 @@ router.put('/me', async (req, res) => {
 router.get('/discover', async (req, res) => {
 	try {
 		const auth = resolveAuthContext(req);
-		const clerkId = auth?.userId;
+			const clerkId = resolveClerkId(req, auth);
 		const result = await getDiscoverUsers({ clerkId });
 		return res.status(200).json(result);
 	} catch (error) {
@@ -104,7 +108,7 @@ router.get('/discover', async (req, res) => {
 router.post('/action', async (req, res) => {
 	try {
 		const auth = resolveAuthContext(req);
-		const clerkId = auth?.userId;
+			const clerkId = resolveClerkId(req, auth);
 		const { targetUserId, action } = req.body || {};
 		const result = await handleUserAction({ clerkId, targetUserId, action });
 		return res.status(200).json(result);
@@ -117,7 +121,7 @@ router.post('/action', async (req, res) => {
 router.get('/connections', async (req, res) => {
 	try {
 		const auth = resolveAuthContext(req);
-		const clerkId = auth?.userId;
+			const clerkId = resolveClerkId(req, auth);
 		const result = await getConnections({ clerkId });
 		return res.status(200).json(result);
 	} catch (error) {

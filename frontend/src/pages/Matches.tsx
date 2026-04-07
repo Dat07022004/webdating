@@ -7,6 +7,8 @@ import { Layout } from "@/components/layout/Layout";
 import { MatchCard } from "@/components/cards/MatchCard";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
+import { ReportUserDialog } from "@/components/ReportUserDialog";
+import { BlockUserDialog } from "@/components/BlockUserDialog";
 
 interface MatchUser {
   id: string;
@@ -27,6 +29,10 @@ export default function Matches() {
   const [likes, setLikes] = useState<MatchUser[]>([]);
   const [sent, setSent] = useState<{status: string, user: MatchUser}[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+
+  // States for Safety Actions
+  const [reportTarget, setReportTarget] = useState<MatchUser | null>(null);
+  const [blockTarget, setBlockTarget] = useState<MatchUser | null>(null);
 
   const fetchConnections = async () => {
     try {
@@ -111,6 +117,78 @@ export default function Matches() {
     }
   };
 
+  const handleReport = async (data: { reason: string; description: string }) => {
+    if (!reportTarget) return;
+    try {
+      const token = await getToken();
+      const baseUrl = (import.meta.env.VITE_API_URL || "").replace(/\/$/, "");
+      const res = await fetch(`${baseUrl}/api/safety/report`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          reportedId: reportTarget.id,
+          reason: data.reason,
+          description: data.description,
+        }),
+      });
+
+      if (res.ok) {
+        toast({
+          title: "Report submitted",
+          description: "Thank you for your feedback. We will review it shortly.",
+        });
+      } else {
+        const data = await res.json().catch(() => ({}));
+        toast({
+          title: "Report failed",
+          description: data.message || "Could not submit report. Please try again.",
+          variant: "destructive",
+        });
+      }
+    } catch (error) {
+      console.error("Report error:", error);
+    }
+  };
+
+  const handleBlock = async () => {
+    if (!blockTarget) return;
+    try {
+      const token = await getToken();
+      const baseUrl = (import.meta.env.VITE_API_URL || "").replace(/\/$/, "");
+      const res = await fetch(`${baseUrl}/api/safety/block`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          blockedId: blockTarget.id,
+        }),
+      });
+
+      if (res.ok) {
+        toast({
+          title: "User blocked",
+          description: "User has been removed from your matches.",
+        });
+        setBlockTarget(null);
+        fetchConnections();
+      } else {
+        const data = await res.json().catch(() => ({}));
+        toast({
+          title: "Block failed",
+          description: data.message || "Could not block user. Please try again.",
+          variant: "destructive",
+        });
+      }
+    } catch (error) {
+      console.error("Block error:", error);
+    }
+  };
+
   return (
     <Layout isAuthenticated>
       <div className="min-h-screen py-8">
@@ -157,6 +235,8 @@ export default function Matches() {
                       <MatchCard
                         user={match}
                         onMessage={() => handleMessage(match.id)}
+                        onReport={() => setReportTarget(match)}
+                        onBlock={() => setBlockTarget(match)}
                       />
                     </motion.div>
                   ))}
@@ -232,6 +312,25 @@ export default function Matches() {
           </Tabs>
         </div>
       </div>
+
+      {/* Safety Dialogs */}
+      {reportTarget && (
+        <ReportUserDialog
+          isOpen={!!reportTarget}
+          onClose={() => setReportTarget(null)}
+          targetUser={{ id: reportTarget.id, name: reportTarget.name }}
+          onSubmit={handleReport}
+        />
+      )}
+
+      {blockTarget && (
+        <BlockUserDialog
+          isOpen={!!blockTarget}
+          onClose={() => setBlockTarget(null)}
+          targetUser={{ id: blockTarget.id, name: blockTarget.name }}
+          onConfirm={handleBlock}
+        />
+      )}
     </Layout>
   );
 }

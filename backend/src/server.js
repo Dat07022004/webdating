@@ -17,6 +17,8 @@ import revenueRoutes from "./routes/revenue.routes.js";
 import appointmentsRoutes from "./routes/appointments.routes.js";
 import dateSpotsRoutes from "./routes/dateSpots.routes.js";
 import { requireActiveUser } from "./middleware/auth.middleware.js";
+import safetyRoutes from "./routes/safety.routes.js";
+
 
 import { functions, inngest } from "./config/inngest.js";
 import { initSocket } from "./socket/index.js";
@@ -52,14 +54,33 @@ app.use(
 
 // Inngest requests require parsed JSON body.
 app.use("/api/inngest", serve({ client: inngest, functions }));
+<<<<<<< HEAD
 app.use("/api/users", requireActiveUser, userRoutes);
 app.use("/api/chat", requireActiveUser, chatRoutes);
+ 
+     // Protect core user APIs with requireActiveUser middleware in non-public contexts
+     app.use("/api/users", requireActiveUser, userRoutes);
+     app.use("/api/chat", requireActiveUser, chatRoutes);
+     app.use("/api/upload", requireActiveUser, uploadRoutes);
+     app.use("/api/premium", requireActiveUser, premiumRoutes);
+     app.use("/api/appointments", requireActiveUser, appointmentsRoutes);
+     app.use("/api/date-spots", requireActiveUser, dateSpotsRoutes);
+ 
+     // Notifications router (itself handles auth/fallback internally)
 app.use("/api/upload", requireActiveUser, uploadRoutes);
 app.use("/api/premium", requireActiveUser, premiumRoutes);
 app.use("/api/appointments", requireActiveUser, appointmentsRoutes);
 app.use("/api/date-spots", requireActiveUser, dateSpotsRoutes);
+=======
+app.use("/api/users", userRoutes);
+app.use("/api/chat", chatRoutes);
+app.use("/api/notifications", notificationRoutes);
+app.use("/api/upload", uploadRoutes);
+app.use("/api/premium", premiumRoutes);
+>>>>>>> 5f8489b1f77ff81842c3752032324d1a68c3fd05
 app.use("/api/admin", adminRoutes);
 app.use("/api/revenue", revenueRoutes);
+app.use("/api/safety", safetyRoutes);
 app.use("/api", healthRoutes);
 
 const frontendDistPath = path.join(_dirname, "../frontend/dist");
