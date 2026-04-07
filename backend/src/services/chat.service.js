@@ -1,3 +1,4 @@
+import mongoose from 'mongoose';
 import { Conversation } from '../models/conversation.model.js';
 import { Message } from '../models/message.model.js';
 import { User } from '../models/user.model.js';
@@ -25,16 +26,18 @@ const resolveUserByClerkId = async (clerkId) => {
 export const getConversationsByClerkId = async ({ clerkId }) => {
     const user = await resolveUserByClerkId(clerkId);
 
-    const blockedRecords = await UserBlocked.find({
-        $or: [
-            { blockerId: user._id },
-            { blockedId: user._id }
-        ]
-    });
-
-    const blockedUserIds = blockedRecords.map(record => 
-        record.blockerId.toString() === user._id.toString() ? record.blockedId.toString() : record.blockerId.toString()
-    );
+    let blockedUserIds = [];
+    if (mongoose.isValidObjectId(user._id)) {
+        const blockedRecords = await UserBlocked.find({
+            $or: [
+                { blockerId: user._id },
+                { blockedId: user._id }
+            ]
+        });
+        blockedUserIds = blockedRecords.map(record =>
+            record.blockerId.toString() === user._id.toString() ? record.blockedId.toString() : record.blockerId.toString()
+        );
+    }
 
     const conversations = await Conversation.find({ 
         participants: user._id,
