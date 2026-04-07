@@ -63,7 +63,13 @@ describe('chat.service', () => {
         const result = await getConversationsByClerkId({ clerkId: 'clerk_1' });
 
         expect(result.conversations).toHaveLength(1);
-        expect(mockConversationModel.find).toHaveBeenCalledWith({ participants: expect.anything() });
+        expect(mockConversationModel.find).toHaveBeenCalledWith(
+            expect.objectContaining({
+                $and: expect.arrayContaining([
+                    expect.objectContaining({ participants: expect.anything() })
+                ])
+            })
+        );
     });
 
     it('rejects when clerkId is missing', async () => {

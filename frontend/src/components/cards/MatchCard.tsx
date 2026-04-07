@@ -1,7 +1,13 @@
 import { motion } from "framer-motion";
-import { MessageCircle, Heart } from "lucide-react";
+import { MessageCircle, Heart, MoreVertical, ShieldAlert, Ban } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 
 interface MatchCardProps {
   user: {
@@ -15,6 +21,8 @@ interface MatchCardProps {
   isNew?: boolean;
   onClick?: () => void;
   onMessage?: () => void;
+  onReport?: () => void;
+  onBlock?: () => void;
   actionLabel?: string;
   onAction?: () => void;
   actionDisabled?: boolean;
@@ -28,6 +36,8 @@ export const MatchCard = ({
   isNew = false,
   onClick,
   onMessage,
+  onReport,
+  onBlock,
   actionLabel = "Message",
   onAction,
   actionDisabled = false,
@@ -40,13 +50,40 @@ export const MatchCard = ({
   return (
     <motion.div
       className={cn(
-        "relative flex flex-col items-center p-4 rounded-2xl bg-card shadow-card cursor-pointer hover:shadow-md transition-shadow",
+        "relative flex flex-col items-center p-4 rounded-2xl bg-card shadow-card cursor-pointer group hover:shadow-md transition-shadow",
         className
       )}
       whileHover={{ scale: 1.02 }}
       whileTap={{ scale: 0.98 }}
       onClick={onClick}
     >
+      {/* 3-dots Menu - visible on hover */}
+      <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity">
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild onClick={(e) => e.stopPropagation()}>
+            <Button variant="ghost" size="icon" className="h-8 w-8 rounded-full hover:bg-muted">
+              <MoreVertical className="h-4 w-4 text-muted-foreground" />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="rounded-xl border-none shadow-xl bg-card">
+            <DropdownMenuItem 
+              onClick={(e) => { e.stopPropagation(); onReport?.(); }}
+              className="gap-2 text-destructive focus:text-destructive focus:bg-destructive/10 cursor-pointer rounded-lg font-medium"
+            >
+              <ShieldAlert className="h-4 w-4" />
+              Report
+            </DropdownMenuItem>
+            <DropdownMenuItem 
+              onClick={(e) => { e.stopPropagation(); onBlock?.(); }}
+              className="gap-2 text-destructive focus:text-destructive focus:bg-destructive/10 cursor-pointer rounded-lg font-medium"
+            >
+              <Ban className="h-4 w-4" />
+              Block
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+      </div>
+
       {/* New Match Indicator */}
       {isNew && (
         <div className="absolute -top-2 -right-2 w-6 h-6 rounded-full gradient-primary flex items-center justify-center animate-pulse-soft">

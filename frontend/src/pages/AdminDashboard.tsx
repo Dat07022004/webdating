@@ -13,6 +13,7 @@ export default function AdminDashboard() {
   const [users, setUsers] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const navigate = useNavigate();
+  const apiBaseUrl = (import.meta.env.VITE_API_URL || "http://localhost:3000").replace(/\/$/, "");
 
   useEffect(() => {
      fetchUsers();
@@ -21,7 +22,7 @@ export default function AdminDashboard() {
   const fetchUsers = async () => {
      try {
        const token = await getToken();
-       const res = await fetch("/api/admin/users", {
+       const res = await fetch(`${apiBaseUrl}/api/admin/users`, {
           headers: { Authorization: `Bearer ${token}` }
        });
        if (res.status === 403 || res.status === 401) {
@@ -43,7 +44,7 @@ export default function AdminDashboard() {
   const banUser = async (userId: string) => {
      try {
        const token = await getToken();
-       const res = await fetch(`/api/admin/users/${userId}/ban`, {
+       const res = await fetch(`${apiBaseUrl}/api/admin/users/${userId}/ban`, {
          method: "POST",
          headers: { 
            Authorization: `Bearer ${token}`,
@@ -65,7 +66,7 @@ export default function AdminDashboard() {
      if (!confirm("Are you sure you want to completely delete this user? This cannot be undone.")) return;
      try {
        const token = await getToken();
-       const res = await fetch(`/api/admin/users/${userId}`, {
+       const res = await fetch(`${apiBaseUrl}/api/admin/users/${userId}`, {
          method: "DELETE",
          headers: { Authorization: `Bearer ${token}` }
        });
@@ -82,7 +83,7 @@ export default function AdminDashboard() {
   const changeRole = async (userId: string, newRole: string) => {
      try {
        const token = await getToken();
-       const res = await fetch(`/api/admin/users/${userId}/role`, {
+       const res = await fetch(`${apiBaseUrl}/api/admin/users/${userId}/role`, {
          method: "PUT",
          headers: { 
            Authorization: `Bearer ${token}`,

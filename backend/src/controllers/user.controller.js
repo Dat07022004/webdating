@@ -2,6 +2,7 @@ import { User } from '../models/user.model.js';
 import { Connection } from '../models/connection.model.js';
 import { MatchSuggestion } from '../models/matchSuggestion.model.js';
 import { Notification } from '../models/notification.model.js';
+import { UserBlocked } from '../models/userBlocked.model.js';
 import { getIO } from '../socket/index.js';
 import { getSocketIds } from '../socket/onlineUsers.js';
 import {
@@ -78,6 +79,13 @@ export const getDiscoverUsers = async ({ clerkId }) => {
         ]
     });
 
+    const blockedRecords = await UserBlocked.find({
+        $or: [
+            { blockerId: currentUser._id },
+            { blockedId: currentUser._id }
+        ]
+    });
+
     const excludedIdSet = new Set([currentUser._id.toString()]);
     existingConnections.forEach((conn) => {
         if (conn.senderId) {
@@ -85,6 +93,15 @@ export const getDiscoverUsers = async ({ clerkId }) => {
         }
         if (conn.receiverId) {
             excludedIdSet.add(conn.receiverId.toString());
+        }
+    });
+
+    blockedRecords.forEach((record) => {
+        if (record.blockerId) {
+            excludedIdSet.add(record.blockerId.toString());
+        }
+        if (record.blockedId) {
+            excludedIdSet.add(record.blockedId.toString());
         }
     });
     const excludedIds = Array.from(excludedIdSet);

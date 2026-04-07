@@ -1,6 +1,8 @@
+import mongoose from 'mongoose';
 import { Conversation } from '../models/conversation.model.js';
 import { Message } from '../models/message.model.js';
 import { User } from '../models/user.model.js';
+import { UserBlocked } from '../models/userBlocked.model.js';
 
 const createError = (statusCode, message) => {
     const error = new Error(message);
@@ -24,7 +26,30 @@ const resolveUserByClerkId = async (clerkId) => {
 export const getConversationsByClerkId = async ({ clerkId }) => {
     const user = await resolveUserByClerkId(clerkId);
 
-    const conversations = await Conversation.find({ participants: user._id })
+    let blockedUserIds = [];
+    if (mongoose.isValidObjectId(user._id)) {
+        const blockedRecords = await UserBlocked.find({
+            $or: [
+                { blockerId: user._id },
+                { blockedId: user._id }
+            ]
+        });
+        blockedUserIds = blockedRecords.map(record =>
+            record.blockerId.toString() === user._id.toString() ? record.blockedId.toString() : record.blockerId.toString()
+        );
+    }
+
+    const conversationFilter = {
+        $and: [
+            { participants: user._id }
+        ]
+    };
+
+    if (blockedUserIds.length > 0) {
+        conversationFilter.$and.push({ participants: { $nin: blockedUserIds } });
+    }
+
+    const conversations = await Conversation.find(conversationFilter)
         .populate({
             path: 'participants',
             select: 'profile.personalInfo.name profile.avatarUrl status clerkId',
