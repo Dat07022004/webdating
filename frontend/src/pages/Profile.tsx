@@ -51,7 +51,38 @@ type Ward = {
   province_code: string;
 };
 
+type ReverseGeocodeResult = {
+  displayLocation: string;
+  provinceName: string;
+  wardName: string;
+};
+
 const MAX_PROFILE_PHOTOS = 6;
+
+const normalizeLocationName = (value: string) =>
+  value
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/đ/g, "d")
+    .replace(/[^a-z0-9\s]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+
+const stripProvincePrefix = (value: string) =>
+  value
+    .replace(/^thanh pho\s+/i, "")
+    .replace(/^tp\.?\s*/i, "")
+    .replace(/^tinh\s+/i, "")
+    .trim();
+
+const stripWardPrefix = (value: string) =>
+  value
+    .replace(/^phuong\s+/i, "")
+    .replace(/^xa\s+/i, "")
+    .replace(/^thi tran\s+/i, "")
+    .replace(/^tt\.?\s*/i, "")
+    .trim();
 
 type ProfileData = {
   name: string;
@@ -403,7 +434,7 @@ export default function Profile() {
         `https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${lat}&lon=${lng}`
       );
       if (!response.ok) {
-        return "";
+        return { displayLocation: "", provinceName: "", wardName: "" };
       }
       const data = (await response.json().catch(() => null)) as
         | {
@@ -413,6 +444,7 @@ export default function Profile() {
               neighbourhood?: string;
               quarter?: string;
               city_district?: string;
+              state_district?: string;
               city?: string;
               town?: string;
               village?: string;
@@ -423,7 +455,11 @@ export default function Profile() {
           }
         | null;
       if (!data?.address) {
-        return data?.display_name || "";
+        return {
+          displayLocation: data?.display_name || "",
+          provinceName: "",
+          wardName: "",
+        };
       }
 
       const wardName =
@@ -431,6 +467,7 @@ export default function Profile() {
         data.address.neighbourhood ||
         data.address.quarter ||
         data.address.city_district ||
+        data.address.state_district ||
         "";
       const provinceName =
         data.address.state ||
@@ -441,10 +478,46 @@ export default function Profile() {
         data.address.county ||
         "";
 
-      return formatLocation(provinceName, wardName) || data.display_name || "";
+      return {
+        displayLocation: formatLocation(provinceName, wardName) || data.display_name || "",
+        provinceName,
+        wardName,
+      } satisfies ReverseGeocodeResult;
     } catch {
-      return "";
+      return { displayLocation: "", provinceName: "", wardName: "" };
     }
+  };
+
+  const findProvinceMatch = (name: string) => {
+    const normalizedTarget = normalizeLocationName(stripProvincePrefix(name));
+    if (!normalizedTarget) return null;
+
+    return (
+      provinces.find((province) => {
+        const normalizedProvince = normalizeLocationName(stripProvincePrefix(province.name));
+        return (
+          normalizedProvince === normalizedTarget ||
+          normalizedProvince.includes(normalizedTarget) ||
+          normalizedTarget.includes(normalizedProvince)
+        );
+      }) || null
+    );
+  };
+
+  const findWardMatch = (name: string, wardOptions: Ward[]) => {
+    const normalizedTarget = normalizeLocationName(stripWardPrefix(name));
+    if (!normalizedTarget) return null;
+
+    return (
+      wardOptions.find((ward) => {
+        const normalizedWard = normalizeLocationName(stripWardPrefix(ward.ward_name));
+        return (
+          normalizedWard === normalizedTarget ||
+          normalizedWard.includes(normalizedTarget) ||
+          normalizedTarget.includes(normalizedWard)
+        );
+      }) || null
+    );
   };
 
   const handleUseCurrentLocation = () => {
@@ -462,9 +535,43 @@ export default function Profile() {
         setCoordinates({ lat: latitude, lng: longitude });
         const resolvedLocation = await reverseGeocode(latitude, longitude);
         const fallbackLocation = `${latitude.toFixed(5)}, ${longitude.toFixed(5)}`;
+
+        let nextLocation = resolvedLocation.displayLocation || fallbackLocation;
+        const matchedProvince = resolvedLocation.provinceName
+          ? findProvinceMatch(resolvedLocation.provinceName)
+          : null;
+
+        if (matchedProvince) {
+          setSelectedProvinceCode(matchedProvince.province_code);
+
+          try {
+            const wardResponse = await fetch(
+              `https://34tinhthanh.com/api/wards?province_code=${matchedProvince.province_code}`
+            );
+            const wardData = (await wardResponse.json().catch(() => [])) as Ward[];
+            const loadedWards = Array.isArray(wardData) ? wardData : [];
+            setWards(loadedWards);
+
+            const matchedWard = resolvedLocation.wardName
+              ? findWardMatch(resolvedLocation.wardName, loadedWards)
+              : null;
+
+            if (matchedWard) {
+              setSelectedWardCode(matchedWard.ward_code);
+              nextLocation = formatLocation(matchedProvince.name, matchedWard.ward_name);
+            } else {
+              setSelectedWardCode("");
+              nextLocation = formatLocation(matchedProvince.name);
+            }
+          } catch {
+            setSelectedWardCode("");
+            nextLocation = formatLocation(matchedProvince.name);
+          }
+        }
+
         setDraft((prev) => ({
           ...prev,
-          location: resolvedLocation || fallbackLocation,
+          location: nextLocation,
         }));
         setIsLocating(false);
       },
