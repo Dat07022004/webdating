@@ -2,7 +2,7 @@ import { Router } from 'express';
 import multer from 'multer';
 import { ENV } from '../config/env.js';
 import { getMyProfile, onboardUser, updateMyProfile, uploadUserPhotos, getDiscoverUsers, handleUserAction, getConnections } from '../controllers/user.controller.js';
-import { requireActiveUser } from '../middleware/auth.middleware.js';
+import { requireActiveUser} from '../middleware/auth.middleware.js';
 
 const router = Router();
 const upload = multer({

@@ -41,11 +41,25 @@ export default function Discover() {
         });
         
         const data = await res.json();
-        if (data.users && Array.isArray(data.users)) {
-             setUsers(data.users);
+        if (res.ok) {
+          if (data.users && Array.isArray(data.users)) {
+            setUsers(data.users);
+          }
+        } else {
+          console.error("Discover API error:", data.message);
+          toast({
+            title: "Error",
+            description: data.message || "Failed to fetch users",
+            variant: "destructive",
+          });
         }
       } catch (error) {
         console.error("Failed to fetch discover users:", error);
+        toast({
+          title: "Network Error",
+          description: "Could not connect to server",
+          variant: "destructive",
+        });
       } finally {
         setIsLoading(false);
       }
