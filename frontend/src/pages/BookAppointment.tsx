@@ -1,8 +1,7 @@
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Layout } from "@/components/layout/Layout";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -13,14 +12,29 @@ import { CalendarIcon, Clock, MapPin, Heart, ArrowLeft, Check } from "lucide-rea
 import { format } from "date-fns";
 import { cn } from "@/lib/utils";
 import { motion } from "framer-motion";
-import { Link } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import { useToast } from "@/hooks/use-toast";
+import { useAuth } from "@clerk/clerk-react";
 
-const matchedUsers = [
-  { id: 1, name: "Emma W.", initials: "EW", age: 26 },
-  { id: 2, name: "Sophie L.", initials: "SL", age: 24 },
-  { id: 3, name: "Olivia M.", initials: "OM", age: 28 },
-];
+type MatchUser = {
+  id: string;
+  name: string;
+  age?: number;
+};
+
+const APPOINTMENTS_STORAGE_KEY = "webdating_appointments";
+
+type StoredAppointment = {
+  id: number;
+  matchName: string;
+  matchInitials: string;
+  spot: string;
+  location: string;
+  date: string;
+  time: string;
+  status: "confirmed" | "pending" | "completed" | "cancelled";
+  note?: string;
+};
 
 const spots = [
   { id: 1, name: "Sunset Rooftop Lounge", location: "Downtown" },
@@ -36,13 +50,77 @@ const timeSlots = [
 ];
 
 const BookAppointment = () => {
+  const { getToken } = useAuth();
+  const [searchParams] = useSearchParams();
   const [date, setDate] = useState<Date>();
   const [time, setTime] = useState("");
-  const [spot, setSpot] = useState("");
+  const [spot, setSpot] = useState(searchParams.get("spot") || "");
   const [matchUser, setMatchUser] = useState("");
   const [note, setNote] = useState("");
   const [submitted, setSubmitted] = useState(false);
+  const [matches, setMatches] = useState<MatchUser[]>([]);
+  const [isLoadingMatches, setIsLoadingMatches] = useState(true);
   const { toast } = useToast();
+
+  const baseUrl = useMemo(
+    () => (import.meta.env.VITE_API_URL ? import.meta.env.VITE_API_URL.replace(/\/$/, "") : "http://localhost:3000"),
+    []
+  );
+
+  useEffect(() => {
+    const fetchMatches = async () => {
+      try {
+        const token = await getToken();
+        if (!token) {
+          setMatches([]);
+          return;
+        }
+
+        const res = await fetch(baseUrl + "/api/users/connections", {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        });
+
+        if (!res.ok) {
+          throw new Error("Failed to load matches");
+        }
+
+        const data = await res.json();
+        const realMatches = Array.isArray(data?.matches) ? data.matches : [];
+
+        setMatches(
+          realMatches
+            .filter((u: { id?: string; name?: string }) => Boolean(u?.id && u?.name))
+            .map((u: { id: string; name: string; age?: number }) => ({
+              id: String(u.id),
+              name: u.name,
+              age: Number.isFinite(u.age) ? u.age : undefined,
+            }))
+        );
+      } catch (error) {
+        console.error("Failed to load matches for booking:", error);
+        toast({
+          title: "Cannot load matches",
+          description: "Please try again in a moment.",
+          variant: "destructive",
+        });
+        setMatches([]);
+      } finally {
+        setIsLoadingMatches(false);
+      }
+    };
+
+    fetchMatches();
+  }, [baseUrl, getToken, toast]);
+
+  const getInitials = (name: string) =>
+    name
+      .split(" ")
+      .filter(Boolean)
+      .slice(0, 2)
+      .map((part) => part[0]?.toUpperCase() || "")
+      .join("");
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -50,6 +128,36 @@ const BookAppointment = () => {
       toast({ title: "Missing fields", description: "Please fill in all required fields.", variant: "destructive" });
       return;
     }
+
+    const selectedMatch = matches.find((m) => m.id === matchUser);
+    const selectedSpot = spots.find((s) => String(s.id) === spot);
+    if (!selectedMatch || !selectedSpot) {
+      toast({ title: "Invalid selection", description: "Please select a valid match and date spot.", variant: "destructive" });
+      return;
+    }
+
+    const payload: StoredAppointment = {
+      id: Date.now(),
+      matchName: selectedMatch.name,
+      matchInitials: getInitials(selectedMatch.name),
+      spot: selectedSpot.name,
+      location: selectedSpot.location,
+      date: format(date, "MMM d, yyyy"),
+      time,
+      status: "pending",
+      note: note.trim() || undefined,
+    };
+
+    try {
+      const currentRaw = localStorage.getItem(APPOINTMENTS_STORAGE_KEY);
+      const current = currentRaw ? JSON.parse(currentRaw) : [];
+      const next = Array.isArray(current) ? [payload, ...current] : [payload];
+      localStorage.setItem(APPOINTMENTS_STORAGE_KEY, JSON.stringify(next));
+    } catch {
+      toast({ title: "Save failed", description: "Could not persist booking locally.", variant: "destructive" });
+      return;
+    }
+
     setSubmitted(true);
     toast({ title: "Date booked! 🎉", description: "Your appointment has been scheduled." });
   };
@@ -101,29 +209,35 @@ const BookAppointment = () => {
                 <CardDescription>Choose who you'd like to go on a date with</CardDescription>
               </CardHeader>
               <CardContent>
+                {isLoadingMatches ? (
+                  <p className="text-sm text-muted-foreground">Loading your matches...</p>
+                ) : matches.length === 0 ? (
+                  <p className="text-sm text-muted-foreground">No confirmed matches yet. Go to Matches tab and connect first.</p>
+                ) : (
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                  {matchedUsers.map(user => (
+                  {matches.map((user) => (
                     <button
                       type="button"
                       key={user.id}
-                      onClick={() => setMatchUser(String(user.id))}
+                      onClick={() => setMatchUser(user.id)}
                       className={cn(
                         "flex items-center gap-3 p-3 rounded-xl border-2 transition-all",
-                        matchUser === String(user.id)
+                        matchUser === user.id
                           ? "border-primary bg-coral-light/30"
                           : "border-border hover:border-primary/50"
                       )}
                     >
                       <Avatar className="h-10 w-10">
-                        <AvatarFallback className="gradient-primary text-primary-foreground text-sm">{user.initials}</AvatarFallback>
+                        <AvatarFallback className="gradient-primary text-primary-foreground text-sm">{getInitials(user.name)}</AvatarFallback>
                       </Avatar>
                       <div className="text-left">
                         <p className="font-medium text-foreground text-sm">{user.name}</p>
-                        <p className="text-xs text-muted-foreground">Age {user.age}</p>
+                        <p className="text-xs text-muted-foreground">{user.age ? `Age ${user.age}` : "Matched user"}</p>
                       </div>
                     </button>
                   ))}
                 </div>
+                )}
               </CardContent>
             </Card>
 

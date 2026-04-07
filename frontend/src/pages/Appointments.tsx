@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Layout } from "@/components/layout/Layout";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -23,12 +23,29 @@ interface Appointment {
   note?: string;
 }
 
-const appointments: Appointment[] = [
+const APPOINTMENTS_STORAGE_KEY = "webdating_appointments";
+
+const seedAppointments: Appointment[] = [
   { id: 1, matchName: "Emma W.", matchInitials: "EW", spot: "Sunset Rooftop Lounge", location: "Downtown", date: "Mar 20, 2026", time: "7:00 PM", status: "confirmed", note: "Looking forward to it!" },
   { id: 2, matchName: "Sophie L.", matchInitials: "SL", spot: "The Cozy Bean Café", location: "Midtown", date: "Mar 22, 2026", time: "2:00 PM", status: "pending" },
   { id: 3, matchName: "Olivia M.", matchInitials: "OM", spot: "Botanical Gardens Walk", location: "Westside Park", date: "Mar 10, 2026", time: "10:00 AM", status: "completed" },
   { id: 4, matchName: "Isabella R.", matchInitials: "IR", spot: "Bella Italia Trattoria", location: "Little Italy", date: "Mar 5, 2026", time: "8:00 PM", status: "cancelled" },
 ];
+
+const readStoredAppointments = (): Appointment[] => {
+  try {
+    const raw = localStorage.getItem(APPOINTMENTS_STORAGE_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+};
+
+const persistAppointments = (items: Appointment[]) => {
+  localStorage.setItem(APPOINTMENTS_STORAGE_KEY, JSON.stringify(items));
+};
 
 const statusConfig: Record<string, { label: string; className: string }> = {
   confirmed: { label: "Confirmed", className: "bg-success/10 text-success border-success/20" },
@@ -39,12 +56,34 @@ const statusConfig: Record<string, { label: string; className: string }> = {
 
 const Appointments = () => {
   const [cancelId, setCancelId] = useState<number | null>(null);
+  const [appointments, setAppointments] = useState<Appointment[]>([]);
   const { toast } = useToast();
 
-  const upcoming = appointments.filter(a => a.status === "confirmed" || a.status === "pending");
-  const past = appointments.filter(a => a.status === "completed" || a.status === "cancelled");
+  useEffect(() => {
+    const fromStorage = readStoredAppointments();
+    const merged = [...fromStorage, ...seedAppointments.filter((seed) => !fromStorage.some((item) => item.id === seed.id))];
+    setAppointments(merged);
+    persistAppointments(merged);
+  }, []);
+
+  const upcoming = useMemo(
+    () => appointments.filter((a) => a.status === "confirmed" || a.status === "pending"),
+    [appointments]
+  );
+  const past = useMemo(
+    () => appointments.filter((a) => a.status === "completed" || a.status === "cancelled"),
+    [appointments]
+  );
 
   const handleCancel = () => {
+    if (cancelId == null) return;
+    setAppointments((prev) => {
+      const next: Appointment[] = prev.map((item) =>
+        item.id === cancelId ? { ...item, status: "cancelled" as const } : item
+      );
+      persistAppointments(next);
+      return next;
+    });
     toast({ title: "Appointment cancelled", description: "Your date has been cancelled." });
     setCancelId(null);
   };
