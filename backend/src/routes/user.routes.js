@@ -2,7 +2,8 @@ import { Router } from 'express';
 import multer from 'multer';
 import { ENV } from '../config/env.js';
 import { getMyProfile, onboardUser, updateMyProfile, uploadUserPhotos, getDiscoverUsers, handleUserAction, getConnections } from '../controllers/user.controller.js';
-import { requireActiveUser} from '../middleware/auth.middleware.js';
+import { requireActiveUser } from '../middleware/auth.middleware.js';
+import { resolveAuthContext, resolveClerkId } from '../middleware/auth.helpers.js';
 
 const router = Router();
 const upload = multer({
@@ -12,22 +13,6 @@ const upload = multer({
 		fileSize: 8 * 1024 * 1024
 	}
 });
-
-const resolveAuthContext = (req) => {
-	try {
-		const auth = typeof req.auth === 'function' ? req.auth() : req.auth;
-		return auth || null;
-	} catch (error) {
-		if (ENV.NODE_ENV !== 'production') {
-			console.warn('Auth resolution failed in development, using fallback clerkId when provided:', error?.message || error);
-			return null;
-		}
-
-		throw error;
-	}
-};
-
-const resolveClerkId = (req, auth) => req.user?.clerkId || auth?.userId || (ENV.NODE_ENV === 'production' ? undefined : req.headers?.['x-clerk-id'] || req.body?.clerkId || req.query?.clerkId);
 
 const sendError = (res, error, fallbackMessage) => {
 	const statusCode = Number.isInteger(error?.statusCode) ? error.statusCode : 500;
@@ -66,9 +51,8 @@ router.use('/connections', requireActiveUser);
 
 router.get('/me', async (req, res) => {
 	try {
-		const auth = resolveAuthContext(req);
-			const clerkId = resolveClerkId(req, auth);
-			const email = req.user?.email || auth?.sessionClaims?.email || req.query?.email;
+		const clerkId = req.user?.clerkId;
+		const email = req.user?.email || req.query?.email;
 		const result = await getMyProfile({ clerkId, email });
 		return res.status(200).json(result);
 	} catch (error) {
@@ -79,9 +63,8 @@ router.get('/me', async (req, res) => {
 
 router.put('/me', async (req, res) => {
 	try {
-		const auth = resolveAuthContext(req);
-			const clerkId = resolveClerkId(req, auth);
-			const email = req.user?.email || auth?.sessionClaims?.email || req.body?.email;
+		const clerkId = req.user?.clerkId;
+		const email = req.user?.email || req.body?.email;
 		const result = await updateMyProfile({ clerkId, email, body: req.body || {} });
 		return res.status(200).json(result);
 	} catch (error) {
@@ -92,8 +75,7 @@ router.put('/me', async (req, res) => {
 
 router.get('/discover', async (req, res) => {
 	try {
-		const auth = resolveAuthContext(req);
-			const clerkId = resolveClerkId(req, auth);
+		const clerkId = req.user?.clerkId;
 		const result = await getDiscoverUsers({ clerkId });
 		return res.status(200).json(result);
 	} catch (error) {
@@ -107,8 +89,7 @@ router.get('/discover', async (req, res) => {
 
 router.post('/action', async (req, res) => {
 	try {
-		const auth = resolveAuthContext(req);
-			const clerkId = resolveClerkId(req, auth);
+		const clerkId = req.user?.clerkId;
 		const { targetUserId, action } = req.body || {};
 		const result = await handleUserAction({ clerkId, targetUserId, action });
 		return res.status(200).json(result);
@@ -120,8 +101,7 @@ router.post('/action', async (req, res) => {
 
 router.get('/connections', async (req, res) => {
 	try {
-		const auth = resolveAuthContext(req);
-			const clerkId = resolveClerkId(req, auth);
+		const clerkId = req.user?.clerkId;
 		const result = await getConnections({ clerkId });
 		return res.status(200).json(result);
 	} catch (error) {

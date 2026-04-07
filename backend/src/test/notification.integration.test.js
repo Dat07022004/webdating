@@ -11,6 +11,17 @@ jest.unstable_mockModule('@clerk/express', () => ({
     requireAuth: () => (req, _res, next) => next()
 }));
 
+jest.unstable_mockModule('../middleware/auth.middleware.js', () => ({
+    requireActiveUser: (req, res, next) => {
+        const clerkId = req.headers['x-clerk-id'];
+        if (!clerkId) {
+            return res.status(401).json({ message: 'Unauthorized: No valid session' });
+        }
+        req.user = { clerkId, email: `${clerkId}@example.com` };
+        next();
+    }
+}));
+
 jest.unstable_mockModule('../controllers/notification.controller.js', () => ({
     getNotifications: mockGetNotifications,
     markAsRead: mockMarkAsRead,
@@ -23,11 +34,6 @@ const { default: notificationRoutes } = await import('../routes/notification.rou
 const createApp = () => {
     const app = express();
     app.use(express.json());
-    app.use((req, _res, next) => {
-        const clerkId = req.headers['x-clerk-id'];
-        req.auth = () => (clerkId ? { userId: clerkId } : null);
-        next();
-    });
     app.use('/api/notifications', notificationRoutes);
     return app;
 };
@@ -100,6 +106,6 @@ describe('notification routes integration', () => {
             .set('x-clerk-id', '');
 
         expect(res.statusCode).toBe(401);
-        expect(res.body.message).toBe('Unauthorized');
+        expect(res.body.message).toMatch(/Unauthorized/);
     });
 });
