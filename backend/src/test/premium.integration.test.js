@@ -11,6 +11,17 @@ jest.unstable_mockModule('@clerk/express', () => ({
     requireAuth: () => (req, _res, next) => next()
 }));
 
+jest.unstable_mockModule('../middleware/auth.middleware.js', () => ({
+    requireActiveUser: (req, res, next) => {
+        const clerkId = req.headers['x-clerk-id'];
+        if (!clerkId) {
+            return res.status(401).json({ message: 'Unauthorized: No valid session' });
+        }
+        req.user = { clerkId, email: `${clerkId}@example.com` };
+        next();
+    }
+}));
+
 jest.unstable_mockModule('../controllers/premium.controller.js', () => ({
     createMoMoPayment: mockCreateMoMoPayment,
     getPremiumStatus: mockGetPremiumStatus,
@@ -23,11 +34,6 @@ const { default: premiumRoutes } = await import('../routes/premium.routes.js');
 const createApp = () => {
     const app = express();
     app.use(express.json());
-    app.use((req, _res, next) => {
-        const clerkId = req.headers['x-clerk-id'];
-        req.auth = () => (clerkId ? { userId: clerkId } : null);
-        next();
-    });
     app.use('/api/premium', premiumRoutes);
     return app;
 };
