@@ -154,6 +154,7 @@ export async function createAppointment({ userId, locationId, startTime, totalCo
 
   try {
     session.startTransaction();
+    console.log('createAppointment: Starting transaction', { userId, locationId, startTime });
 
     const conflict = await Appointment.findOne({
       locationId: location._id,
@@ -180,20 +181,25 @@ export async function createAppointment({ userId, locationId, startTime, totalCo
     ], { session });
 
     saved = created;
+    console.log('createAppointment: Created appointment (in transaction)', { appointmentId: saved._id?.toString() });
 
     await session.commitTransaction();
+    console.log('createAppointment: Commit transaction successful', { appointmentId: saved._id?.toString() });
   } catch (err) {
+    console.error('createAppointment: Error during transaction, aborting', err && err.message);
     try {
       await session.abortTransaction();
+      console.log('createAppointment: Transaction aborted');
     } catch (abortErr) {
-      console.warn('Failed to abort transaction', abortErr);
+      console.warn('createAppointment: Failed to abort transaction', abortErr);
     }
     throw err;
   } finally {
     try {
       await session.endSession();
+      console.log('createAppointment: Session ended');
     } catch (endErr) {
-      console.warn('Failed to end session', endErr);
+      console.warn('createAppointment: Failed to end session', endErr);
     }
   }
 
