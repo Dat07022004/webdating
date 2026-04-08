@@ -1,17 +1,10 @@
 import express from 'express';
 import { getConversations, getMessages, createConversation, markConversationAsSeen } from '../controllers/chat.controller.js';
-import { requireAuth } from '@clerk/express'; // ensure user is authed
-import { ENV } from '../config/env.js';
+import { requireActiveUser } from '../middleware/auth.middleware.js';
 
-const authMiddleware = ENV.NODE_ENV === 'production' ? requireAuth() : (_req, _res, next) => next();
-const router = express.Router().use(authMiddleware);
+const router = express.Router();
 
-const resolveAuthContext = (req) => {
-    const auth = typeof req.auth === 'function' ? req.auth() : req.auth;
-    return auth || null;
-};
-
-const resolveClerkId = (req, auth) => req.user?.clerkId || auth?.userId || (ENV.NODE_ENV === 'production' ? undefined : req.headers?.['x-clerk-id'] || req.query?.clerkId || req.body?.clerkId);
+router.use(requireActiveUser);
 
 const sendError = (res, error, fallbackMessage) => {
     const statusCode = Number.isInteger(error?.statusCode) ? error.statusCode : 500;
@@ -21,8 +14,7 @@ const sendError = (res, error, fallbackMessage) => {
 
 router.get('/conversations', async (req, res) => {
     try {
-        const auth = resolveAuthContext(req);
-        const clerkId = resolveClerkId(req, auth);
+        const clerkId = req.user?.clerkId;
         const result = await getConversations({ clerkId });
         return res.status(200).json({ success: true, data: result.conversations });
     } catch (error) {
@@ -33,8 +25,7 @@ router.get('/conversations', async (req, res) => {
 
 router.get('/conversations/:conversationId/messages', async (req, res) => {
     try {
-        const auth = resolveAuthContext(req);
-        const clerkId = resolveClerkId(req, auth);
+        const clerkId = req.user?.clerkId;
         const { conversationId } = req.params;
         const { page = 1, limit = 50 } = req.query;
         const result = await getMessages({ clerkId, conversationId, page, limit });
@@ -47,8 +38,7 @@ router.get('/conversations/:conversationId/messages', async (req, res) => {
 
 router.post('/conversations', async (req, res) => {
     try {
-        const auth = resolveAuthContext(req);
-        const clerkId = resolveClerkId(req, auth);
+        const clerkId = req.user?.clerkId;
         const { targetUserId } = req.body || {};
         const result = await createConversation({ clerkId, targetUserId });
         return res.status(200).json({ success: true, data: result.conversation });
@@ -60,8 +50,7 @@ router.post('/conversations', async (req, res) => {
 
 router.patch('/conversations/:conversationId/seen', async (req, res) => {
     try {
-        const auth = resolveAuthContext(req);
-        const clerkId = resolveClerkId(req, auth);
+        const clerkId = req.user?.clerkId;
         const { conversationId } = req.params;
         const result = await markConversationAsSeen({ clerkId, conversationId });
         return res.status(200).json(result);

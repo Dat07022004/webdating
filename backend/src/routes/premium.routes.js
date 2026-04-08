@@ -1,26 +1,8 @@
 import express from 'express';
-import { requireAuth } from '@clerk/express';
-import { ENV } from '../config/env.js';
 import { createMoMoPayment, getPremiumStatus, momoIPN, momoReturn } from '../controllers/premium.controller.js';
+import { requireActiveUser } from '../middleware/auth.middleware.js';
 
-const authMiddleware = ENV.NODE_ENV === 'production' ? requireAuth() : (_req, _res, next) => next();
-const router = express.Router().use(authMiddleware);
-
-const resolveAuthContext = (req) => {
-	try {
-		const auth = typeof req.auth === 'function' ? req.auth() : req.auth;
-		return auth || null;
-	} catch (error) {
-		if (ENV.NODE_ENV !== 'production') {
-			console.warn('Auth resolution failed in development, using fallback clerkId when provided:', error?.message || error);
-			return null;
-		}
-
-		throw error;
-	}
-};
-
-const resolveClerkId = (req, auth) => req.user?.clerkId || auth?.userId || (ENV.NODE_ENV === 'production' ? undefined : req.headers?.['x-clerk-id'] || req.body?.clerkId || req.query?.clerkId);
+const router = express.Router();
 
 const sendError = (res, error, fallbackMessage) => {
 	const statusCode = Number.isInteger(error?.statusCode) ? error.statusCode : 500;
@@ -28,10 +10,9 @@ const sendError = (res, error, fallbackMessage) => {
 	return res.status(statusCode).json({ message });
 };
 
-router.post('/create-payment', async (req, res) => {
+router.post('/create-payment', requireActiveUser, async (req, res) => {
 	try {
-		const auth = resolveAuthContext(req);
-		const clerkId = resolveClerkId(req, auth);
+		const clerkId = req.user?.clerkId;
 		const result = await createMoMoPayment({ clerkId, plan: req.body?.plan });
 		return res.status(200).json(result);
 	} catch (error) {
@@ -61,10 +42,9 @@ router.post('/momo-return', async (req, res) => {
 	}
 });
 
-router.get('/status', async (req, res) => {
+router.get('/status', requireActiveUser, async (req, res) => {
 	try {
-		const auth = resolveAuthContext(req);
-		const clerkId = resolveClerkId(req, auth);
+		const clerkId = req.user?.clerkId;
 		const result = await getPremiumStatus({ clerkId });
 		return res.status(200).json(result);
 	} catch (error) {

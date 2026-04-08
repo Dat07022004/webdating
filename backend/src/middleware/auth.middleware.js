@@ -1,35 +1,7 @@
 import { User } from '../models/user.model.js';
-import { ENV } from '../config/env.js';
 import { isUserActivelyBanned } from '../services/admin.service.js';
+import { resolveAuthContext, resolveClerkId } from './auth.helpers.js';
 
-export const resolveAuthContext = (req) => {
-    try {
-        const auth = typeof req.auth === 'function' ? req.auth() : req.auth;
-        return auth || null;
-    } catch (error) {
-        if (ENV.NODE_ENV !== 'production') {
-            console.warn('Auth resolution failed in development, using fallback clerkId when provided:', error?.message || error);
-            return null;
-        }
-        throw error;
-    }
-};
-
-const resolveClerkIdFromRequest = (req, auth) => {
-    const fallbackClerkId = ENV.NODE_ENV === 'production'
-        ? undefined
-        : req.headers?.['x-clerk-id'] || req.body?.clerkId || req.query?.clerkId;
-    return auth?.userId || fallbackClerkId;
-};
-
-const resolveJwtFromRequest = (req) => {
-    const authHeader = req.headers?.authorization;
-    if (!authHeader || !authHeader.startsWith('Bearer ')) {
-        return null;
-    }
-
-    return authHeader.slice('Bearer '.length);
-};
 
 const resolveActiveUserByClerkId = async (clerkId) => {
     const user = await User.findOne({ clerkId });
@@ -48,9 +20,9 @@ const resolveActiveUserByClerkId = async (clerkId) => {
 export const requireActiveUser = async (req, res, next) => {
     try {
         const auth = resolveAuthContext(req);
-        const jwt = resolveJwtFromRequest(req);
-        console.log('JWT:', jwt || '(missing)');
-        const clerkId = resolveClerkIdFromRequest(req, auth);
+
+        // Allow fallback primarily for dev testing
+        const clerkId = resolveClerkId(req, auth);
 
         if (!clerkId) {
             return res.status(401).json({ message: 'Unauthorized: No valid session' });
@@ -72,9 +44,8 @@ export const requireActiveUser = async (req, res, next) => {
 export const requireAdmin = async (req, res, next) => {
     try {
         const auth = resolveAuthContext(req);
-        const jwt = resolveJwtFromRequest(req);
-        console.log('JWT:', jwt || '(missing)');
-        const clerkId = resolveClerkIdFromRequest(req, auth);
+        // Allow fallback primarily for dev testing
+        const clerkId = resolveClerkId(req, auth);
 
         if (!clerkId) {
             return res.status(401).json({ message: 'Unauthorized: No valid session' });
@@ -102,9 +73,8 @@ export const requireAdmin = async (req, res, next) => {
 export const requireManagerOrAdmin = async (req, res, next) => {
     try {
         const auth = resolveAuthContext(req);
-        const jwt = resolveJwtFromRequest(req);
-        console.log('JWT:', jwt || '(missing)');
-        const clerkId = resolveClerkIdFromRequest(req, auth);
+        // Allow fallback primarily for dev testing
+        const clerkId = resolveClerkId(req, auth);
 
         if (!clerkId) {
             return res.status(401).json({ message: 'Unauthorized: No valid session' });
