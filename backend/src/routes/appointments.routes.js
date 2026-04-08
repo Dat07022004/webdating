@@ -4,6 +4,7 @@ import {
   suggestAppointments,
   createAppointment,
   getAppointmentsByUser,
+  respondToAppointment,
   updateAppointment,
   cancelAppointment,
 } from "../services/appointment.service.js";
@@ -76,6 +77,25 @@ router.get("/:userId", async (req, res) => {
 
     const appts = await getAppointmentsByUser(requesterObjectId);
     return res.status(200).json(appts);
+  } catch (err) {
+    if (err && err.status) return res.status(err.status).json({ message: err.message });
+    return res.status(500).json({ message: err instanceof Error ? err.message : String(err) });
+  }
+});
+
+router.patch("/:id/respond", async (req, res) => {
+  try {
+    const auth = getAuth(req);
+    const requesterId = auth?.userId;
+    if (!requesterId) return res.status(401).json({ message: "Unauthorized" });
+
+    const requesterObjectId = await resolveUserObjectId(requesterId);
+    if (!requesterObjectId) return res.status(404).json({ message: "User not found" });
+
+    const { id } = req.params;
+    const { action } = req.body || {};
+    const saved = await respondToAppointment({ appointmentId: id, requesterObjectId, action });
+    return res.status(200).json(saved);
   } catch (err) {
     if (err && err.status) return res.status(err.status).json({ message: err.message });
     return res.status(500).json({ message: err instanceof Error ? err.message : String(err) });

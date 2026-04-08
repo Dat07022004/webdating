@@ -234,7 +234,7 @@ const BookAppointment = () => {
         }
 
         setSubmitted(true);
-        toast({ title: "Date booked! 🎉", description: "Your appointment has been scheduled." });
+        toast({ title: "Request sent", description: "Your match can now confirm or decline this date." });
       } catch (err) {
         console.error('Booking failed', err);
         toast({ title: 'Booking failed', description: String(err?.message || err), variant: 'destructive' });
@@ -254,8 +254,8 @@ const BookAppointment = () => {
                 <div className="w-16 h-16 rounded-full gradient-primary flex items-center justify-center mx-auto">
                   <Check className="w-8 h-8 text-primary-foreground" />
                 </div>
-                <h2 className="font-serif text-2xl font-bold text-foreground">Date Booked!</h2>
-                <p className="text-muted-foreground">Your date has been confirmed. You'll receive a notification when your match responds.</p>
+                <h2 className="font-serif text-2xl font-bold text-foreground">Request Sent!</h2>
+                <p className="text-muted-foreground">Your match can now confirm or decline this date. You'll be notified when they respond.</p>
                 <div className="flex gap-3 justify-center pt-4">
                   <Button variant="outline" asChild><Link to="/appointments">View Appointments</Link></Button>
                   <Button variant="gradient" asChild><Link to="/date-spots">Browse More</Link></Button>

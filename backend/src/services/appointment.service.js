@@ -1,9 +1,12 @@
 import mongoose from 'mongoose';
 import { Appointment, Location } from '../models/appointments.model.js';
 import { Connection } from '../models/connection.model.js';
+import { Notification } from '../models/notification.model.js';
 import { Review } from '../models/review.model.js';
 import { User } from '../models/user.model.js';
 import { sendMail } from '../lib/mailer.js';
+import { getIO } from '../socket/index.js';
+import { getSocketIds } from '../socket/onlineUsers.js';
 
 export async function suggestAppointments({ userId, category, budget, date }) {
   if (!userId || !category || budget == null || !date) {
@@ -187,6 +190,8 @@ export async function createAppointment({ userId, matchUserId, locationId, start
   const session = await mongoose.startSession();
   let savedAppointment = null;
   let locationName = 'địa điểm';
+  let requesterName = 'Ai đó';
+  let requesterImage = '';
   const matchUserObjectId = new mongoose.Types.ObjectId(matchUserId);
 
   try {
@@ -205,6 +210,12 @@ export async function createAppointment({ userId, matchUserId, locationId, start
     }
 
     locationName = location.name || locationName;
+
+    const requesterUser = await User.findById(normalizedBooking.userId, null, { session })
+      .select('username profile.personalInfo.name profile.avatarUrl')
+      .lean();
+    requesterName = requesterUser?.profile?.personalInfo?.name || requesterUser?.username || requesterName;
+    requesterImage = requesterUser?.profile?.avatarUrl || '';
 
     const matchedUser = await User.findById(matchUserObjectId, null, { session })
       .select('_id username profile.personalInfo.name')
@@ -269,6 +280,21 @@ export async function createAppointment({ userId, matchUserId, locationId, start
     console.warn('Failed to send booking email', mailErr);
   }
 
+  if (savedAppointment) {
+    const startStr = new Date(savedAppointment.startTime).toLocaleString();
+    await createAppointmentNotification({
+      userId: matchUserObjectId,
+      senderId: userId,
+      image: requesterImage,
+      title: 'Lời hẹn mới',
+      message: `${requesterName} muốn hẹn bạn tại ${locationName} vào ${startStr}.`,
+      metadata: {
+        appointmentId: savedAppointment._id?.toString(),
+        action: 'request',
+      },
+    });
+  }
+
   return savedAppointment;
 }
 
@@ -286,6 +312,80 @@ export async function getAppointmentsByUser(userId) {
     .sort({ startTime: 1 })
     .exec();
   return appts;
+}
+
+export async function respondToAppointment({ appointmentId, requesterObjectId, action }) {
+  if (!mongoose.Types.ObjectId.isValid(appointmentId)) {
+    throw createServiceError(400, 'Invalid appointment id');
+  }
+  if (!mongoose.Types.ObjectId.isValid(requesterObjectId)) {
+    throw createServiceError(400, 'Invalid requester');
+  }
+  if (!['confirm', 'decline'].includes(action)) {
+    throw createServiceError(400, 'Invalid response action');
+  }
+
+  const appt = await Appointment.findById(appointmentId)
+    .populate('locationId', 'name')
+    .populate('userId', 'email username profile.personalInfo.name profile.avatarUrl')
+    .populate('matchUserId', 'email username profile.personalInfo.name profile.avatarUrl')
+    .exec();
+
+  if (!appt) {
+    throw createServiceError(404, 'Appointment not found');
+  }
+
+  if (String(appt.matchUserId?._id || appt.matchUserId) !== String(requesterObjectId)) {
+    throw createServiceError(403, 'Forbidden');
+  }
+
+  if (appt.status !== 'pending') {
+    throw createServiceError(409, 'Lịch hẹn này không còn chờ xác nhận');
+  }
+
+  appt.status = action === 'confirm' ? 'confirmed' : 'cancelled';
+  const saved = await appt.save();
+
+  const responderName =
+    appt.matchUserId?.profile?.personalInfo?.name ||
+    appt.matchUserId?.username ||
+    'Match của bạn';
+  const locationName = appt.locationId?.name || 'địa điểm';
+  const startStr = new Date(appt.startTime).toLocaleString();
+  const creatorId = appt.userId?._id || appt.userId;
+
+  await createAppointmentNotification({
+    userId: creatorId,
+    senderId: requesterObjectId,
+    image: appt.matchUserId?.profile?.avatarUrl || '',
+    title: action === 'confirm' ? 'Lịch hẹn đã được xác nhận' : 'Lịch hẹn đã bị từ chối',
+    message:
+      action === 'confirm'
+        ? `${responderName} đã xác nhận lịch hẹn tại ${locationName} vào ${startStr}.`
+        : `${responderName} đã từ chối lịch hẹn tại ${locationName} vào ${startStr}.`,
+    metadata: {
+      appointmentId: saved._id?.toString(),
+      action,
+    },
+  });
+
+  try {
+    const toEmail = appt.userId?.email;
+    if (toEmail) {
+      await sendMail({
+        to: toEmail,
+        subject: action === 'confirm' ? `Lịch hẹn đã được xác nhận` : `Lịch hẹn đã bị từ chối`,
+        text:
+          action === 'confirm'
+            ? `${responderName} đã xác nhận lịch hẹn tại ${locationName} vào ${startStr}.`
+            : `${responderName} đã từ chối lịch hẹn tại ${locationName} vào ${startStr}.`,
+      });
+    }
+  } catch (mailErr) {
+    console.warn('Failed to send appointment response email', mailErr);
+  }
+
+  return saved;
 }
 
 export async function updateAppointment(id, { startTime, status }) {
@@ -348,6 +448,48 @@ export async function cancelAppointment(id) {
   }
 
   return saved;
+}
+
+async function createAppointmentNotification({ userId, senderId, title, message, metadata = {}, image = '' }) {
+  if (!userId) return null;
+
+  const normalizedUserId =
+    typeof userId === 'string' ? new mongoose.Types.ObjectId(userId) : userId;
+  const normalizedSenderId =
+    senderId && typeof senderId === 'string' && mongoose.Types.ObjectId.isValid(senderId)
+      ? new mongoose.Types.ObjectId(senderId)
+      : senderId || undefined;
+
+  try {
+    await Notification.create({
+      userId: normalizedUserId,
+      senderId: normalizedSenderId,
+      type: 'appointment',
+      title,
+      message,
+      image: image || undefined,
+      metadata,
+    });
+  } catch (notificationErr) {
+    console.warn('Failed to create appointment notification', notificationErr);
+  }
+
+  try {
+    const io = getIO();
+    const socketIds = getSocketIds(String(normalizedUserId));
+    socketIds.forEach((socketId) => {
+      io.to(socketId).emit('new_notification', {
+        type: 'appointment',
+        title,
+        message,
+        metadata,
+      });
+    });
+  } catch (socketErr) {
+    console.warn('Failed to emit appointment notification', socketErr?.message || socketErr);
+  }
+
+  return true;
 }
 
 function createServiceError(status, message) {

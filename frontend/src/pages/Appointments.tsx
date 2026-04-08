@@ -3,7 +3,7 @@ import { useAuth } from "@clerk/clerk-react";
 import { format } from "date-fns";
 import { motion } from "framer-motion";
 import { Link } from "react-router-dom";
-import { CalendarDays, Clock, Loader2, MapPin, Plus, Star, Trash2 } from "lucide-react";
+import { CalendarDays, Check, Clock, Loader2, MapPin, Plus, Star, Trash2, X } from "lucide-react";
 import { Layout } from "@/components/layout/Layout";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -60,6 +60,7 @@ type BackendAppointment = {
 type AppointmentCardItem = {
   id: string;
   canCancel: boolean;
+  canRespond: boolean;
   initials: string;
   title: string;
   spot: string;
@@ -67,6 +68,7 @@ type AppointmentCardItem = {
   date: string;
   time: string;
   status: AppointmentStatus;
+  statusHint?: string;
   note?: string;
 };
 
@@ -90,6 +92,7 @@ const Appointments = () => {
   const { getToken, userId } = useAuth();
   const { toast } = useToast();
   const [cancelId, setCancelId] = useState<string | null>(null);
+  const [respondingId, setRespondingId] = useState<string | null>(null);
   const [appointments, setAppointments] = useState<AppointmentCardItem[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
@@ -123,6 +126,7 @@ const Appointments = () => {
           const owner = item.userId && typeof item.userId === "object" ? item.userId : null;
           const guest = item.matchUserId && typeof item.matchUserId === "object" ? item.matchUserId : null;
           const isOwner = owner?.clerkId === userId;
+          const isGuest = guest?.clerkId === userId;
           const counterpart = isOwner ? guest : owner;
           const counterpartName =
             counterpart?.profile?.personalInfo?.name || counterpart?.username || "Your match";
@@ -133,6 +137,7 @@ const Appointments = () => {
           return {
             id: item._id,
             canCancel: isOwner,
+            canRespond: isGuest && item.status === "pending",
             initials: getInitials(counterpartName),
             title: counterpartName,
             spot: spotName,
@@ -140,6 +145,12 @@ const Appointments = () => {
             date: Number.isNaN(start.getTime()) ? "Unknown date" : format(start, "MMM d, yyyy"),
             time: Number.isNaN(start.getTime()) ? "Unknown time" : format(start, "p"),
             status: item.status || "pending",
+            statusHint:
+              item.status === "pending"
+                ? isGuest
+                  ? "Waiting for your confirmation."
+                  : `Waiting for ${counterpartName} to confirm.`
+                : undefined,
             note: item.note || undefined,
           };
         });
@@ -202,6 +213,51 @@ const Appointments = () => {
     }
   };
 
+  const handleRespond = async (appointmentId: string, action: "confirm" | "decline") => {
+    try {
+      setRespondingId(appointmentId);
+      const token = await getToken();
+      const res = await fetch(`${baseUrl}/api/appointments/${appointmentId}/respond`, {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({ action }),
+      });
+
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err?.message || "Failed to respond to appointment");
+      }
+
+      const nextStatus: AppointmentStatus = action === "confirm" ? "confirmed" : "cancelled";
+      setAppointments((prev) =>
+        prev.map((item) =>
+          item.id === appointmentId
+            ? { ...item, status: nextStatus, canRespond: false, statusHint: undefined }
+            : item
+        )
+      );
+      toast({
+        title: action === "confirm" ? "Appointment confirmed" : "Appointment declined",
+        description:
+          action === "confirm"
+            ? "The other person has been notified."
+            : "The invitation has been declined.",
+      });
+    } catch (error) {
+      console.error("Failed to respond to appointment:", error);
+      toast({
+        title: "Response failed",
+        description: String(error instanceof Error ? error.message : error),
+        variant: "destructive",
+      });
+    } finally {
+      setRespondingId(null);
+    }
+  };
+
   const AppointmentCard = ({ apt, showActions }: { apt: AppointmentCardItem; showActions: boolean }) => (
     <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}>
       <Card className="gradient-card hover:shadow-md transition-all">
@@ -229,6 +285,31 @@ const Appointments = () => {
               </div>
               {apt.note ? (
                 <p className="text-sm text-muted-foreground mt-2 italic">"{apt.note}"</p>
+              ) : null}
+              {apt.statusHint ? (
+                <p className="text-sm text-muted-foreground mt-2">{apt.statusHint}</p>
+              ) : null}
+              {apt.canRespond ? (
+                <div className="flex gap-2 mt-3">
+                  <Button
+                    size="sm"
+                    variant="gradient"
+                    className="gap-1"
+                    onClick={() => handleRespond(apt.id, "confirm")}
+                    disabled={respondingId === apt.id}
+                  >
+                    <Check className="w-3.5 h-3.5" />Confirm
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="gap-1"
+                    onClick={() => handleRespond(apt.id, "decline")}
+                    disabled={respondingId === apt.id}
+                  >
+                    <X className="w-3.5 h-3.5" />Decline
+                  </Button>
+                </div>
               ) : null}
               {showActions ? (
                 <div className="flex gap-2 mt-3">
