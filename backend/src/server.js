@@ -1,3 +1,4 @@
+
 import express from "express";
 import path from "path";
 import fs from "fs";
@@ -55,7 +56,7 @@ app.use(
 );
 
 app.use("/api/inngest", serve({ client: inngest, functions }));
-app.use("/api/users", requireActiveUser, userRoutes);
+app.use("/api/users", userRoutes);
 app.use("/api/chat", requireActiveUser, chatRoutes);
 app.use("/api/upload", requireActiveUser, uploadRoutes);
 app.use("/api/premium", requireActiveUser, premiumRoutes);
