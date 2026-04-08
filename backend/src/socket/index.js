@@ -1,5 +1,5 @@
 import { Server } from "socket.io";
-import { socketAuthMiddleware } from "./socketMiddleware.js";
+import { socketAuthMiddleware } from "../middleware/socketMiddleware.js";
 import { registerChatHandlers } from "./chatHandlers.js";
 import { removeUser } from "./onlineUsers.js";
 import { ENV } from "../config/env.js";
@@ -70,9 +70,6 @@ export function initSocket(server) {
         `[Socket] User disconnected: ${userName} (${userId}) - Socket: ${socket.id}`,
       );
       removeUser(userId, socket.id);
-
-      // Emit event tới các user khác nếu cần thiết (vd: user offline)
-      // io.emit('user_offline', { userId });
     });
   });
 

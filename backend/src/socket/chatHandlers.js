@@ -1,22 +1,10 @@
-import { Notification } from '../models/notification.model.js';
+import { Notification } from "../models/notification.model.js";
 import { randomUUID } from "node:crypto";
 import { addUser, getSocketIds } from "./onlineUsers.js";
 import { Message } from "../models/message.model.js";
 import { Conversation } from "../models/conversation.model.js";
 import { User } from "../models/user.model.js";
 
-/**
- * Call session state in-memory.
- * @type {Map<string, {
- *   callId: string,
- *   callerUserId: string,
- *   calleeUserId: string,
- *   callerSocketId: string,
- *   calleeSocketIds: Set<string>,
- *   acceptedSocketId: string | null,
- *   status: 'ringing' | 'accepted',
- *   createdAt: number
- * }>} */
 const callSessions = new Map();
 
 function emitToSocketIds(io, socketIds, eventName, payload) {
@@ -77,12 +65,6 @@ function closeSession(callId) {
   callSessions.delete(callId);
 }
 
-/**
- * Đăng ký các Socket.io events liên quan đến chat.
- *
- * @param {import('socket.io').Server} io
- * @param {import('socket.io').Socket} socket
- */
 export function registerChatHandlers(io, socket) {
   const userId = socket.data.userId;
 
@@ -126,16 +108,19 @@ export function registerChatHandlers(io, socket) {
       const receiverSockets = getSocketIds(receiverId);
       if (receiverSockets.length > 0) {
         // Lấy tên người gửi để hiện thông báo
-        const sender = await User.findById(userId).select('profile.personalInfo.name username');
-        const senderName = sender?.profile?.personalInfo?.name || sender?.username || 'Ai đó';
+        const sender = await User.findById(userId).select(
+          "profile.personalInfo.name username",
+        );
+        const senderName =
+          sender?.profile?.personalInfo?.name || sender?.username || "Ai đó";
 
         // Gửi thông báo tới máy người nhận
-        receiverSockets.forEach(sockId => {
-          io.to(sockId).emit('new_message_alert', {
+        receiverSockets.forEach((sockId) => {
+          io.to(sockId).emit("new_message_alert", {
             ...message.toObject(),
-            senderName
+            senderName,
           });
-          io.to(sockId).emit('new_notification', { type: 'message' });
+          io.to(sockId).emit("new_notification", { type: "message" });
         });
 
         // Lưu thông báo vào DB để hiện ở trang Notifications
@@ -143,14 +128,17 @@ export function registerChatHandlers(io, socket) {
           await Notification.create({
             userId: receiverId,
             senderId: userId,
-            type: 'message',
-            title: 'New Message',
+            type: "message",
+            title: "New Message",
             message: `${senderName} đã gửi cho bạn một tin nhắn.`,
             image: sender?.profile?.avatarUrl,
-            metadata: { conversationId, messageId: message._id }
+            metadata: { conversationId, messageId: message._id },
           });
         } catch (notificationErr) {
-          console.error('[Notification] Message notification failed:', notificationErr.message);
+          console.error(
+            "[Notification] Message notification failed:",
+            notificationErr.message,
+          );
         }
       }
 
