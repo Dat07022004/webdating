@@ -11,7 +11,6 @@ export const initializeSocket = (token: string): Socket => {
   if (!socket) {
     socket = io(SOCKET_URL, {
       auth: { token },
-      // Có thể bọc bằng try catch hoặc xử lý reconnect event
       reconnection: true,
       reconnectionAttempts: 5,
     });
