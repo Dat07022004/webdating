@@ -51,8 +51,8 @@ router.post("/", async (req, res) => {
     const userId = await resolveUserObjectId(inputUserId);
     if (!userId) return res.status(404).json({ message: "User not found" });
 
-    const { locationId, startTime, totalCost } = req.body;
-    const saved = await createAppointment({ userId, locationId, startTime, totalCost });
+    const { locationId, matchUserId, startTime, totalCost, note } = req.body;
+    const saved = await createAppointment({ userId, matchUserId, locationId, startTime, totalCost, note });
     return res.status(201).json(saved);
   } catch (err) {
     if (err && err.status) return res.status(err.status).json({ message: err.message });

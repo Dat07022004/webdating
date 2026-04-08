@@ -16,6 +16,7 @@ const locationSchema = new mongoose.Schema(
 const appointmentSchema = new mongoose.Schema(
   {
     userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true, index: true },
+    matchUserId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true, index: true },
     locationId: { type: mongoose.Schema.Types.ObjectId, ref: 'Location', required: true, index: true },
     startTime: { type: Date, required: true, index: true },
     endTime: {

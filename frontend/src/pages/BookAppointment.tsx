@@ -22,6 +22,12 @@ type MatchUser = {
   age?: number;
 };
 
+type SpotOption = {
+  id: string;
+  name: string;
+  location: string;
+};
+
 const APPOINTMENTS_STORAGE_KEY = "webdating_appointments";
 
 type StoredAppointment = {
@@ -35,14 +41,6 @@ type StoredAppointment = {
   status: "confirmed" | "pending" | "completed" | "cancelled";
   note?: string;
 };
-
-const spots = [
-  { id: 1, name: "Sunset Rooftop Lounge", location: "Downtown" },
-  { id: 2, name: "The Cozy Bean Café", location: "Midtown" },
-  { id: 3, name: "Bella Italia Trattoria", location: "Little Italy" },
-  { id: 4, name: "Botanical Gardens Walk", location: "Westside Park" },
-  { id: 5, name: "Jazz & Blues Corner", location: "Arts District" },
-];
 
 const timeSlots = [
   "10:00 AM", "11:00 AM", "12:00 PM", "1:00 PM", "2:00 PM",
@@ -59,7 +57,9 @@ const BookAppointment = () => {
   const [note, setNote] = useState("");
   const [submitted, setSubmitted] = useState(false);
   const [matches, setMatches] = useState<MatchUser[]>([]);
+  const [spots, setSpots] = useState<SpotOption[]>([]);
   const [isLoadingMatches, setIsLoadingMatches] = useState(true);
+  const [isLoadingSpots, setIsLoadingSpots] = useState(true);
   const { toast } = useToast();
 
   const baseUrl = useMemo(
@@ -114,6 +114,48 @@ const BookAppointment = () => {
     fetchMatches();
   }, [baseUrl, getToken, toast]);
 
+  useEffect(() => {
+    const fetchSpots = async () => {
+      try {
+        const token = await getToken();
+        const res = await fetch(baseUrl + "/api/date-spots", {
+          headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+        });
+
+        if (!res.ok) {
+          throw new Error("Failed to load date spots");
+        }
+
+        const data = await res.json();
+        const items = Array.isArray(data) ? data : Array.isArray(data?.items) ? data.items : [];
+        const nextSpots = items
+          .filter((item: { _id?: string; id?: string; name?: string }) => Boolean(item?._id || item?.id))
+          .map((item: { _id?: string; id?: string; name?: string; address?: string; location?: string }) => ({
+            id: String(item._id || item.id),
+            name: item.name || "Unknown",
+            location: item.address || item.location || "",
+          }));
+
+        setSpots(nextSpots);
+        setSpot((currentSpot) => (
+          currentSpot && !nextSpots.some((item) => item.id === currentSpot) ? "" : currentSpot
+        ));
+      } catch (error) {
+        console.error("Failed to load date spots for booking:", error);
+        toast({
+          title: "Cannot load places",
+          description: "Please try again in a moment.",
+          variant: "destructive",
+        });
+        setSpots([]);
+      } finally {
+        setIsLoadingSpots(false);
+      }
+    };
+
+    fetchSpots();
+  }, [baseUrl, getToken, toast]);
+
   const getInitials = (name: string) =>
     name
       .split(" ")
@@ -130,7 +172,7 @@ const BookAppointment = () => {
     }
 
     const selectedMatch = matches.find((m) => m.id === matchUser);
-    const selectedSpot = spots.find((s) => String(s.id) === spot);
+    const selectedSpot = spots.find((s) => s.id === spot);
     if (!selectedMatch || !selectedSpot) {
       toast({ title: "Invalid selection", description: "Please select a valid match and date spot.", variant: "destructive" });
       return;
@@ -178,7 +220,12 @@ const BookAppointment = () => {
             'Content-Type': 'application/json',
             ...(token ? { Authorization: `Bearer ${token}` } : {}),
           },
-          body: JSON.stringify({ locationId: spot, startTime: startTimeISO, note: payload.note }),
+          body: JSON.stringify({
+            locationId: selectedSpot.id,
+            matchUserId: selectedMatch.id,
+            startTime: startTimeISO,
+            note: payload.note
+          }),
         });
 
         if (!res.ok) {
@@ -288,10 +335,15 @@ const BookAppointment = () => {
                   <SelectTrigger><SelectValue placeholder="Select a date spot" /></SelectTrigger>
                   <SelectContent>
                     {spots.map(s => (
-                      <SelectItem key={s.id} value={String(s.id)}>{s.name} — {s.location}</SelectItem>
+                      <SelectItem key={s.id} value={s.id}>{s.name} — {s.location}</SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
+                {isLoadingSpots ? (
+                  <p className="text-sm text-muted-foreground mt-2">Loading available places...</p>
+                ) : spots.length === 0 ? (
+                  <p className="text-sm text-muted-foreground mt-2">No date spots available right now.</p>
+                ) : null}
               </CardContent>
             </Card>
 
@@ -358,7 +410,7 @@ const BookAppointment = () => {
               </CardContent>
             </Card>
 
-            <Button type="submit" variant="hero" className="w-full">
+            <Button type="submit" variant="hero" className="w-full" disabled={isLoadingMatches || isLoadingSpots || spots.length === 0}>
               Confirm Date Booking
             </Button>
           </form>

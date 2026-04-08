@@ -1,5 +1,6 @@
 import mongoose from 'mongoose';
 import { Appointment, Location } from '../models/appointments.model.js';
+import { Connection } from '../models/connection.model.js';
 import { Review } from '../models/review.model.js';
 import { User } from '../models/user.model.js';
 import { sendMail } from '../lib/mailer.js';
@@ -96,118 +97,194 @@ export async function suggestAppointments({ userId, category, budget, date }) {
   return suggestions.slice(0, 3);
 }
 
-export async function validateBooking({ userId, selectedTime }) {
-  if (!userId) throw new Error('Missing userId');
-  if (!selectedTime) throw new Error('Missing selectedTime');
+export async function validateBooking({ userId, locationId, selectedTime, session = null }) {
+  if (!userId) throw createServiceError(400, 'Missing userId');
+  if (!locationId) throw createServiceError(400, 'Missing locationId');
+  if (!selectedTime) throw createServiceError(400, 'Missing selectedTime');
+  if (!mongoose.Types.ObjectId.isValid(userId)) {
+    throw createServiceError(400, 'Người dùng không hợp lệ');
+  }
+  if (!mongoose.Types.ObjectId.isValid(locationId)) {
+    throw createServiceError(400, 'Địa điểm không hợp lệ');
+  }
 
-  const sel = new Date(selectedTime);
-  if (Number.isNaN(sel.getTime())) throw new Error('Invalid selectedTime');
+  const startTime = new Date(selectedTime);
+  if (Number.isNaN(startTime.getTime())) throw createServiceError(400, 'Invalid selectedTime');
 
   const now = new Date();
-  if (sel.getTime() < now.getTime()) {
-    const err = new Error('Không thể chọn thời gian trong quá khứ');
-    err.status = 400;
-    err.statusCode = 400;
-    throw err;
+  if (startTime.getTime() < now.getTime()) {
+    throw createServiceError(400, 'Không thể chọn thời gian trong quá khứ');
   }
 
-  // No blocking check for existing appointments — allow creating multiple bookings.
-  return true;
+  const APPT_DURATION_MS = 2 * 60 * 60 * 1000;
+  const endTime = new Date(startTime.getTime() + APPT_DURATION_MS);
+
+  const userObjId = new mongoose.Types.ObjectId(userId);
+  const locObjId = new mongoose.Types.ObjectId(locationId);
+
+  const overlapQuery = {
+    status: { $nin: ['cancelled', 'completed'] },
+    startTime: { $lt: endTime },
+    endTime: { $gt: startTime },
+  };
+
+  const userConflict = await Appointment.findOne(
+    {
+      userId: userObjId,
+      ...overlapQuery,
+    },
+    null,
+    { session }
+  ).lean();
+
+  if (userConflict) {
+    throw createServiceError(409, 'Bạn đã có lịch hẹn khác trong khung giờ này');
+  }
+
+  const locationConflict = await Appointment.findOne(
+    {
+      locationId: locObjId,
+      ...overlapQuery,
+    },
+    null,
+    { session }
+  ).lean();
+
+  if (locationConflict) {
+    throw createServiceError(409, 'Địa điểm đã bị đặt trong khung giờ này');
+  }
+
+  return {
+    startTime,
+    endTime,
+    userId: userObjId,
+    locationId: locObjId,
+  };
 }
 
-export async function createAppointment({ userId, locationId, startTime, totalCost, note }) {
-  if (!userId || !locationId || !startTime) {
+export async function createAppointment({ userId, matchUserId, locationId, startTime, totalCost, note }) {
+  if (!userId || !matchUserId || !locationId || !startTime) {
     throw createServiceError(400, 'Missing required fields');
   }
+  if (!mongoose.Types.ObjectId.isValid(userId)) {
+    throw createServiceError(400, 'Người dùng không hợp lệ');
+  }
+  if (!mongoose.Types.ObjectId.isValid(matchUserId)) {
+    throw createServiceError(400, 'Người được hẹn không hợp lệ');
+  }
+  if (!mongoose.Types.ObjectId.isValid(locationId)) {
+    throw createServiceError(400, 'Địa điểm không hợp lệ');
+  }
+  if (String(userId) === String(matchUserId)) {
+    throw createServiceError(400, 'Không thể đặt lịch với chính mình');
+  }
 
-  await validateBooking({ userId, selectedTime: startTime });
-
-  const start = new Date(startTime);
-  if (Number.isNaN(start.getTime())) throw createServiceError(400, 'Invalid startTime');
-
-  const intendedEnd = new Date(start.getTime() + 2 * 60 * 60 * 1000);
-
-  const location = await Location.findById(locationId).exec();
-  if (!location) throw createServiceError(404, 'Location not found');
+  const selectedStartTime = new Date(startTime);
+  if (Number.isNaN(selectedStartTime.getTime())) {
+    throw createServiceError(400, 'Invalid startTime');
+  }
 
   const session = await mongoose.startSession();
-  let saved;
+  let savedAppointment = null;
+  let locationName = 'địa điểm';
+  const matchUserObjectId = new mongoose.Types.ObjectId(matchUserId);
 
   try {
     session.startTransaction();
-    console.log('createAppointment: Starting transaction', { userId, locationId, startTime });
 
-    const conflict = await Appointment.findOne({
-      locationId: location._id,
-      status: { $nin: ['cancelled', 'completed'] },
-      startTime: { $lt: intendedEnd },
-      endTime: { $gt: start },
-    }).session(session).exec();
+    const normalizedBooking = await validateBooking({
+      userId,
+      locationId,
+      selectedTime: selectedStartTime,
+      session,
+    });
 
-    if (conflict) {
-      const err = new Error('Time slot occupied');
-      err.status = 409;
-      err.statusCode = 409;
-      throw err;
+    const location = await Location.findById(normalizedBooking.locationId, null, { session }).lean();
+    if (!location) {
+      throw createServiceError(404, 'Location not found');
     }
 
-    const [created] = await Appointment.create([
-      {
-        userId: new mongoose.Types.ObjectId(userId),
-        locationId: location._id,
-        startTime: start,
-        endTime: intendedEnd,
-        note: typeof note === 'string' ? note.trim().slice(0, 300) : '',
-        totalCost: totalCost ?? location.averagePrice,
-      },
-    ], { session });
+    locationName = location.name || locationName;
 
-    saved = created;
-    console.log('createAppointment: Created appointment (in transaction)', { appointmentId: saved._id?.toString() });
+    const matchedUser = await User.findById(matchUserObjectId, null, { session })
+      .select('_id username profile.personalInfo.name')
+      .lean();
+    if (!matchedUser) {
+      throw createServiceError(404, 'Không tìm thấy người được hẹn');
+    }
+
+    const matchedConnection = await Connection.findOne(
+      {
+        status: 'matched',
+        $or: [
+          { senderId: normalizedBooking.userId, receiverId: matchUserObjectId },
+          { senderId: matchUserObjectId, receiverId: normalizedBooking.userId },
+        ],
+      },
+      null,
+      { session }
+    ).lean();
+
+    if (!matchedConnection) {
+      throw createServiceError(403, 'Chỉ có thể đặt lịch với người đã match');
+    }
+
+    const createdAppointments = await Appointment.create(
+      [
+        {
+          userId: normalizedBooking.userId,
+          matchUserId: matchUserObjectId,
+          locationId: normalizedBooking.locationId,
+          startTime: normalizedBooking.startTime,
+          endTime: normalizedBooking.endTime,
+          note: typeof note === 'string' ? note.trim().slice(0, 300) : '',
+          totalCost: totalCost ?? location.averagePrice,
+        },
+      ],
+      { session }
+    );
+
+    [savedAppointment] = createdAppointments;
 
     await session.commitTransaction();
-    console.log('createAppointment: Commit transaction successful', { appointmentId: saved._id?.toString() });
   } catch (err) {
-    console.error('createAppointment: Error during transaction, aborting', err && err.message);
-    try {
-      await session.abortTransaction();
-      console.log('createAppointment: Transaction aborted');
-    } catch (abortErr) {
-      console.warn('createAppointment: Failed to abort transaction', abortErr);
-    }
+    await session.abortTransaction();
     throw err;
   } finally {
-    try {
-      await session.endSession();
-      console.log('createAppointment: Session ended');
-    } catch (endErr) {
-      console.warn('createAppointment: Failed to end session', endErr);
-    }
+    await session.endSession();
   }
 
   try {
-    const usersColl = mongoose.connection.collection('users');
-    const userDoc = await usersColl.findOne({ _id: new mongoose.Types.ObjectId(userId) });
+    const userDoc = await User.findById(userId).select('email').lean();
     const toEmail = userDoc?.email;
-    if (toEmail) {
-      const locationName = location?.name || 'địa điểm';
-      const startStr = new Date(saved.startTime).toLocaleString();
+    if (toEmail && savedAppointment) {
+      const startStr = new Date(savedAppointment.startTime).toLocaleString();
       await sendMail({
         to: toEmail,
         subject: `Xác nhận lịch hẹn tại ${locationName}`,
-        text: `Bạn đã đặt lịch hẹn tại ${locationName} vào ${startStr}. Chi phí dự kiến: ${saved.totalCost || 'N/A'}`,
+        text: `Bạn đã đặt lịch hẹn tại ${locationName} vào ${startStr}. Chi phí dự kiến: ${savedAppointment.totalCost || 'N/A'}`,
       });
     }
   } catch (mailErr) {
     console.warn('Failed to send booking email', mailErr);
   }
 
-  return saved;
+  return savedAppointment;
 }
 
 export async function getAppointmentsByUser(userId) {
   if (!mongoose.Types.ObjectId.isValid(userId)) throw createServiceError(400, 'Invalid userId');
-  const appts = await Appointment.find({ userId: new mongoose.Types.ObjectId(userId) }).populate('locationId').sort({ startTime: 1 }).exec();
+  const appts = await Appointment.find({
+    $or: [
+      { userId: new mongoose.Types.ObjectId(userId) },
+      { matchUserId: new mongoose.Types.ObjectId(userId) }
+    ]
+  })
+    .populate('locationId')
+    .populate('userId', 'clerkId username profile.personalInfo.name profile.avatarUrl profile.photos')
+    .populate('matchUserId', 'clerkId username profile.personalInfo.name profile.avatarUrl profile.photos')
+    .sort({ startTime: 1 })
+    .exec();
   return appts;
 }
 
