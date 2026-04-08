@@ -1,8 +1,7 @@
-
-import { useState, useEffect, useCallback } from 'react';
-import { useAuth } from '@clerk/clerk-react';
-import { useSocket } from './useSocket';
-import { useQueryClient } from '@tanstack/react-query';
+import { useState, useEffect, useCallback, useRef } from "react";
+import { useAuth } from "@clerk/clerk-react";
+import { useSocket } from "./useSocket";
+import { useQueryClient } from "@tanstack/react-query";
 
 export interface ChatUser {
   _id: string;
@@ -37,13 +36,19 @@ export const useChat = (activeConversationId?: string | null) => {
   const { getToken, userId: currentClerkId } = useAuth();
   const { socket } = useSocket();
   const queryClient = useQueryClient();
+  const getTokenRef = useRef(getToken);
+  const lastLoadedConversationRef = useRef<string | null>(null);
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [messages, setMessages] = useState<Message[]>([]);
   const [isLoading, setIsLoading] = useState(false);
 
+  useEffect(() => {
+    getTokenRef.current = getToken;
+  }, [getToken]);
+
   const fetchConversations = useCallback(async () => {
     try {
-      const token = await getToken();
+      const token = await getTokenRef.current();
       if (!token) return;
       const res = await fetch(
         `${import.meta.env.VITE_API_URL || "http://localhost:3000"}/api/chat/conversations`,
@@ -58,55 +63,61 @@ export const useChat = (activeConversationId?: string | null) => {
     } catch (e) {
       console.error(e);
     }
-  }, [getToken]);
+  }, []);
 
-  const fetchMessages = useCallback(
-    async (conversationId: string) => {
-      setIsLoading(true);
-      try {
-        const token = await getToken();
-        const res = await fetch(
-          `${import.meta.env.VITE_API_URL || "http://localhost:3000"}/api/chat/conversations/${conversationId}/messages`,
-          {
-            headers: { Authorization: `Bearer ${token}` },
-          },
-        );
-        const data = await res.json();
-        if (data.success) {
-          setMessages(data.data);
-        }
-      } catch (e) {
-        console.error(e);
-      } finally {
-        setIsLoading(false);
+  const fetchMessages = useCallback(async (conversationId: string) => {
+    setIsLoading(true);
+    try {
+      const token = await getTokenRef.current();
+      const res = await fetch(
+        `${import.meta.env.VITE_API_URL || "http://localhost:3000"}/api/chat/conversations/${conversationId}/messages`,
+        {
+          headers: { Authorization: `Bearer ${token}` },
+        },
+      );
+      const data = await res.json();
+      if (data.success) {
+        setMessages(data.data);
       }
-    },
-    [getToken],
-  );
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
 
   useEffect(() => {
     fetchConversations();
   }, [fetchConversations]);
 
-  const markAsSeen = useCallback(async (conversationId: string) => {
-    try {
-      const token = await getToken();
-      if (!token) return;
-      await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:3000'}/api/chat/conversations/${conversationId}/seen`, {
-        method: 'PATCH',
-        headers: { Authorization: `Bearer ${token}` }
-      });
-      // Invalidate the unread counts after marking as seen
-      queryClient.invalidateQueries({ queryKey: ["unread-counts"] });
-    } catch (e) {
-      console.error('markAsSeen error:', e);
-    }
-  }, [getToken, queryClient]);
+  const markAsSeen = useCallback(
+    async (conversationId: string) => {
+      try {
+        const token = await getTokenRef.current();
+        if (!token) return;
+        await fetch(
+          `${import.meta.env.VITE_API_URL || "http://localhost:3000"}/api/chat/conversations/${conversationId}/seen`,
+          {
+            method: "PATCH",
+            headers: { Authorization: `Bearer ${token}` },
+          },
+        );
+        // Invalidate the unread counts after marking as seen
+        queryClient.invalidateQueries({ queryKey: ["unread-counts"] });
+      } catch (e) {
+        console.error("markAsSeen error:", e);
+      }
+    },
+    [queryClient],
+  );
 
   useEffect(() => {
     if (activeConversationId) {
-      fetchMessages(activeConversationId);
-      markAsSeen(activeConversationId);
+      if (lastLoadedConversationRef.current !== activeConversationId) {
+        lastLoadedConversationRef.current = activeConversationId;
+        fetchMessages(activeConversationId);
+        markAsSeen(activeConversationId);
+      }
       if (socket) {
         socket.emit("join_conversation", activeConversationId);
       }
@@ -116,9 +127,10 @@ export const useChat = (activeConversationId?: string | null) => {
         }
       };
     } else {
+      lastLoadedConversationRef.current = null;
       setMessages([]);
     }
-  }, [activeConversationId, fetchMessages, socket]);
+  }, [activeConversationId, fetchMessages, markAsSeen, socket]);
 
   useEffect(() => {
     if (!socket) return;
@@ -196,7 +208,7 @@ export const useChat = (activeConversationId?: string | null) => {
       socket.off("new_message_alert", handleReceiveMessage);
       socket.off("messages_seen", handleMessagesSeen);
     };
-  }, [socket, activeConversationId]);
+  }, [socket, activeConversationId, markAsSeen, queryClient]);
 
   const sendMessage = useCallback(
     (receiverId: string, content: string, type: "text" | "image" = "text") => {

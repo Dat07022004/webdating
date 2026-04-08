@@ -117,7 +117,7 @@ export default function Messages() {
 
   return (
     <Layout isAuthenticated>
-      <div className="h-[calc(100vh-4rem)] flex">
+      <div className="h-[calc(100dvh-5rem)] overflow-hidden flex">
         {/* Conversations List */}
         <div
           className={cn(
