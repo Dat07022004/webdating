@@ -152,7 +152,9 @@ export async function createAppointment({ userId, locationId, startTime, totalCo
   const session = await mongoose.startSession();
   let saved;
 
-  await session.withTransaction(async () => {
+  try {
+    session.startTransaction();
+
     const conflict = await Appointment.findOne({
       locationId: location._id,
       status: { $nin: ['cancelled', 'completed'] },
@@ -178,9 +180,22 @@ export async function createAppointment({ userId, locationId, startTime, totalCo
     ], { session });
 
     saved = created;
-  });
 
-  await session.endSession();
+    await session.commitTransaction();
+  } catch (err) {
+    try {
+      await session.abortTransaction();
+    } catch (abortErr) {
+      console.warn('Failed to abort transaction', abortErr);
+    }
+    throw err;
+  } finally {
+    try {
+      await session.endSession();
+    } catch (endErr) {
+      console.warn('Failed to end session', endErr);
+    }
+  }
 
   try {
     const usersColl = mongoose.connection.collection('users');
