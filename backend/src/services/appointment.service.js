@@ -4,10 +4,6 @@ import { Review } from '../models/review.model.js';
 import { User } from '../models/user.model.js';
 import { sendMail } from '../lib/mailer.js';
 
-/**
- * Service layer for appointments
- */
-
 export async function suggestAppointments({ userId, category, budget, date }) {
   if (!userId || !category || budget == null || !date) {
     throw createServiceError(400, 'Missing required fields');
@@ -100,12 +96,6 @@ export async function suggestAppointments({ userId, category, budget, date }) {
   return suggestions.slice(0, 3);
 }
 
-/**
- * Validate booking rules before creating an appointment.
- * - selectedTime must not be in the past
- * - user must not already have an active (pending/confirmed/scheduled) appointment
- * Returns true when valid, otherwise throws an Error with a Vietnamese message.
- */
 export async function validateBooking({ userId, selectedTime }) {
   if (!userId) throw new Error('Missing userId');
   if (!selectedTime) throw new Error('Missing selectedTime');
@@ -114,7 +104,6 @@ export async function validateBooking({ userId, selectedTime }) {
   if (Number.isNaN(sel.getTime())) throw new Error('Invalid selectedTime');
 
   const now = new Date();
-  // If selected time is strictly before now -> reject
   if (sel.getTime() < now.getTime()) {
     const err = new Error('Không thể chọn thời gian trong quá khứ');
     err.status = 400;
@@ -122,9 +111,6 @@ export async function validateBooking({ userId, selectedTime }) {
     throw err;
   }
 
-  // Check for existing active appointments for this user.
-  // Treat appointments with status 'cancelled' or 'completed' as inactive.
-  // Any appointment not cancelled/completed and with endTime in future (or no endTime) is considered active.
   const activeStatuses = { $nin: ['cancelled', 'completed'] };
 
   const clause = {
@@ -132,7 +118,6 @@ export async function validateBooking({ userId, selectedTime }) {
     status: activeStatuses,
   };
 
-  // also ensure it's not a past appointment by checking endTime > now or endTime missing
   clause.$or = [
     { endTime: { $gt: now } },
     { endTime: { $exists: false } },
@@ -154,7 +139,6 @@ export async function createAppointment({ userId, locationId, startTime, totalCo
     throw createServiceError(400, 'Missing required fields');
   }
 
-  // Validate booking before proceeding
   await validateBooking({ userId, selectedTime: startTime });
 
   const start = new Date(startTime);
@@ -198,7 +182,6 @@ export async function createAppointment({ userId, locationId, startTime, totalCo
 
   await session.endSession();
 
-  // Send booking confirmation email to user (best-effort)
   try {
     const usersColl = mongoose.connection.collection('users');
     const userDoc = await usersColl.findOne({ _id: new mongoose.Types.ObjectId(userId) });
@@ -267,7 +250,6 @@ export async function cancelAppointment(id) {
   appt.status = 'cancelled';
   const saved = await appt.save();
 
-  // Send cancellation email to user (best-effort)
   try {
     const usersColl = mongoose.connection.collection('users');
     const userDoc = await usersColl.findOne({ _id: new mongoose.Types.ObjectId(appt.userId) });

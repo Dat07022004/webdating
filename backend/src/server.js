@@ -48,22 +48,17 @@ app.use(
   clerkMiddleware({
     secretKey: ENV.CLERK_SECRET_KEY,
     publishableKey: ENV.CLERK_PUBLISHABLE_KEY,
-    clockSkewInMs: 60 * 1000 * 5, // 5 minutes leeway
+    clockSkewInMs: 60 * 1000 * 5,
   }),
-); // adds auth access on req via req.auth()
+);
 
-// Inngest requests require parsed JSON body.
 app.use("/api/inngest", serve({ client: inngest, functions }));
- 
-// Protect core user APIs with `requireActiveUser` middleware in non-public contexts
 app.use("/api/users", requireActiveUser, userRoutes);
 app.use("/api/chat", requireActiveUser, chatRoutes);
 app.use("/api/upload", requireActiveUser, uploadRoutes);
 app.use("/api/premium", requireActiveUser, premiumRoutes);
 app.use("/api/appointments", requireActiveUser, appointmentsRoutes);
 app.use("/api/date-spots", requireActiveUser, dateSpotsRoutes);
-
-// Notifications router (itself handles auth/fallback internally)
 app.use("/api/notifications", notificationRoutes);
 
 app.use("/api/admin", adminRoutes);
@@ -72,16 +67,13 @@ app.use("/api/safety", safetyRoutes);
 app.use("/api", healthRoutes);
 
 const frontendDistPath = path.join(_dirname, "../frontend/dist");
-// Only serve frontend if the front end build actually exists
 if (fs.existsSync(path.join(frontendDistPath, "index.html"))) {
   app.use(express.static(frontendDistPath));
 
-  // Express 5 requires named wildcards for catch-all paths.
   app.get("/{*path}", (req, res) => {
     res.sendFile(path.join(frontendDistPath, "index.html"));
   });
 } else {
-  // Fallback in case the wildcard above didn't get mounted (missing dist)
   app.get("/", (req, res) => {
     res
       .status(200)

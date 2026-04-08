@@ -24,11 +24,6 @@ const resolveUserObjectId = async (candidate) => {
   return user?._id?.toString() || null;
 };
 
-/**
- * POST /api/appointments/suggest
- * Trả về tối đa 3 đề xuất: địa điểm, thời gian (start/end) và chi phí dự kiến
- * Body: { userId, category, budget, date }  // date: YYYY-MM-DD
- */
 router.post("/suggest", async (req, res) => {
   try {
     const auth = getAuth(req);
@@ -47,14 +42,6 @@ router.post("/suggest", async (req, res) => {
   }
 });
 
-/**
- * POST /api/appointments
- * Create a new appointment for a given location and startTime.
- * Body: { userId, locationId, startTime, totalCost? }
- * - Checks for time conflicts at the same location (overlap with existing appointments).
- * - If free, creates and returns the appointment (201).
- * - If occupied or bad input, returns appropriate error codes (400/409).
- */
 router.post("/", async (req, res) => {
   try {
     const auth = getAuth(req);
@@ -73,11 +60,6 @@ router.post("/", async (req, res) => {
   }
 });
 
-
-/**
- * GET /api/appointments/:userId
- * Fetch all appointments for a specific user and populate location details.
- */
 router.get("/:userId", async (req, res) => {
   try {
     const auth = getAuth(req);
@@ -100,13 +82,6 @@ router.get("/:userId", async (req, res) => {
   }
 });
 
-
-/**
- * PATCH /api/appointments/:id
- * Update startTime or status of an appointment.
- * Body may include: { startTime?, status? }
- * - When updating startTime, checks for conflicts at the same location excluding this appointment.
- */
 router.patch("/:id", async (req, res) => {
   try {
     const auth = getAuth(req);
@@ -131,11 +106,6 @@ router.patch("/:id", async (req, res) => {
   }
 });
 
-
-/**
- * DELETE /api/appointments/:id
- * Cancel an appointment. This route marks the appointment status as 'cancelled'.
- */
 router.delete("/:id", async (req, res) => {
   try {
     const auth = getAuth(req);

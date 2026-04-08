@@ -50,7 +50,6 @@ export const requireActiveUser = async (req, res, next) => {
         const auth = resolveAuthContext(req);
         const jwt = resolveJwtFromRequest(req);
         console.log('JWT:', jwt || '(missing)');
-        // Allow fallback primarily for dev testing
         const clerkId = resolveClerkIdFromRequest(req, auth);
 
         if (!clerkId) {
@@ -75,7 +74,6 @@ export const requireAdmin = async (req, res, next) => {
         const auth = resolveAuthContext(req);
         const jwt = resolveJwtFromRequest(req);
         console.log('JWT:', jwt || '(missing)');
-        // Allow fallback primarily for dev testing
         const clerkId = resolveClerkIdFromRequest(req, auth);
 
         if (!clerkId) {
@@ -106,7 +104,6 @@ export const requireManagerOrAdmin = async (req, res, next) => {
         const auth = resolveAuthContext(req);
         const jwt = resolveJwtFromRequest(req);
         console.log('JWT:', jwt || '(missing)');
-        // Allow fallback primarily for dev testing
         const clerkId = resolveClerkIdFromRequest(req, auth);
 
         if (!clerkId) {
