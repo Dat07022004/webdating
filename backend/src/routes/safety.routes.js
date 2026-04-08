@@ -1,11 +1,8 @@
 import { Router } from 'express';
 import { reportUser, blockUser, unblockUser, getBlockedUsers } from '../controllers/safety.controller.js';
-import { requireActiveUser, resolveAuthContext } from '../middleware/auth.middleware.js';
-import { ENV } from '../config/env.js';
+import { requireActiveUser } from '../middleware/auth.middleware.js';
 
 const router = Router();
-
-const resolveClerkId = (req, auth) => req.user?.clerkId || auth?.userId || (ENV.NODE_ENV === 'production' ? undefined : req.headers?.['x-clerk-id'] || req.body?.clerkId || req.query?.clerkId);
 
 const sendError = (res, error, fallbackMessage) => {
 	const statusCode = Number.isInteger(error?.statusCode) ? error.statusCode : 500;
@@ -17,8 +14,7 @@ router.use(requireActiveUser);
 
 router.post('/report', async (req, res) => {
 	try {
-		const auth = resolveAuthContext(req);
-		const clerkId = resolveClerkId(req, auth);
+		const clerkId = req.user?.clerkId;
 		const { reportedId, reason, description } = req.body || {};
 		const result = await reportUser({ clerkId, reportedId, reason, description });
 		return res.status(200).json(result);
@@ -30,8 +26,7 @@ router.post('/report', async (req, res) => {
 
 router.post('/block', async (req, res) => {
 	try {
-		const auth = resolveAuthContext(req);
-		const clerkId = resolveClerkId(req, auth);
+		const clerkId = req.user?.clerkId;
 		const { blockedId } = req.body || {};
 		const result = await blockUser({ clerkId, blockedId });
 		return res.status(200).json(result);
@@ -43,8 +38,7 @@ router.post('/block', async (req, res) => {
 
 router.post('/unblock', async (req, res) => {
 	try {
-		const auth = resolveAuthContext(req);
-		const clerkId = resolveClerkId(req, auth);
+		const clerkId = req.user?.clerkId;
 		const { blockedId } = req.body || {};
 		const result = await unblockUser({ clerkId, blockedId });
 		return res.status(200).json(result);
@@ -56,8 +50,7 @@ router.post('/unblock', async (req, res) => {
 
 router.get('/blocked-list', async (req, res) => {
 	try {
-		const auth = resolveAuthContext(req);
-		const clerkId = resolveClerkId(req, auth);
+		const clerkId = req.user?.clerkId;
 		const result = await getBlockedUsers({ clerkId });
 		return res.status(200).json(result);
 	} catch (error) {

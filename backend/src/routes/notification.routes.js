@@ -5,26 +5,11 @@ import {
   markAllAsRead,
   getUnreadCounts
 } from '../controllers/notification.controller.js';
-import { requireAuth } from '@clerk/express';
-import { ENV } from '../config/env.js';
+import { requireActiveUser } from '../middleware/auth.middleware.js';
 
-const authMiddleware = ENV.NODE_ENV === 'production' ? requireAuth() : (_req, _res, next) => next();
-const router = express.Router().use(authMiddleware);
+const router = express.Router();
 
-const resolveAuthContext = (req) => {
-    try {
-        const auth = typeof req.auth === 'function' ? req.auth() : req.auth;
-        return auth || null;
-    } catch (error) {
-        if (ENV.NODE_ENV !== 'production') {
-            console.warn('Auth resolution failed in development:', error?.message);
-            return null;
-        }
-        throw error;
-    }
-};
-
-const resolveClerkId = (req, auth) => req.user?.clerkId || auth?.userId || (ENV.NODE_ENV === 'production' ? undefined : req.headers?.['x-clerk-id'] || req.query?.clerkId || req.body?.clerkId);
+router.use(requireActiveUser);
 
 const sendError = (res, error, fallbackMessage) => {
     const statusCode = Number.isInteger(error?.statusCode) ? error.statusCode : 500;
@@ -34,8 +19,7 @@ const sendError = (res, error, fallbackMessage) => {
 
 router.get('/', async (req, res) => {
     try {
-        const auth = resolveAuthContext(req);
-        const clerkId = resolveClerkId(req, auth);
+        const clerkId = req.user?.clerkId;
         const result = await getNotifications({ clerkId });
         return res.status(200).json(result);
     } catch (error) {
@@ -46,8 +30,7 @@ router.get('/', async (req, res) => {
 
 router.get('/unread-counts', async (req, res) => {
     try {
-        const auth = resolveAuthContext(req);
-        const clerkId = resolveClerkId(req, auth);
+        const clerkId = req.user?.clerkId;
         const result = await getUnreadCounts({ clerkId });
         return res.status(200).json(result);
     } catch (error) {
@@ -58,8 +41,7 @@ router.get('/unread-counts', async (req, res) => {
 
 router.patch('/:id/read', async (req, res) => {
     try {
-        const auth = resolveAuthContext(req);
-        const clerkId = resolveClerkId(req, auth);
+        const clerkId = req.user?.clerkId;
         const { id } = req.params;
         const result = await markAsRead({ clerkId, id });
         return res.status(200).json(result);
@@ -71,8 +53,7 @@ router.patch('/:id/read', async (req, res) => {
 
 router.patch('/read-all', async (req, res) => {
     try {
-        const auth = resolveAuthContext(req);
-        const clerkId = resolveClerkId(req, auth);
+        const clerkId = req.user?.clerkId;
         const result = await markAllAsRead({ clerkId });
         return res.status(200).json(result);
     } catch (error) {
