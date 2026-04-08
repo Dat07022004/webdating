@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { useAuth } from "@clerk/clerk-react";
 import { Layout } from "@/components/layout/Layout";
 import { Card, CardContent, CardFooter, CardHeader } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -9,6 +10,7 @@ import { MapPin, Star, DollarSign, Clock, Heart, Search, Filter, Coffee, Utensil
 import { motion } from "framer-motion";
 
 const spots = [
+  // fallback static spots while backend data loads
   {
     id: 1,
     name: "Sunset Rooftop Lounge",
@@ -108,11 +110,50 @@ const costColors: Record<string, string> = {
 };
 
 const DateSpots = () => {
+  const { getToken } = useAuth();
   const [search, setSearch] = useState("");
   const [category, setCategory] = useState("all");
   const [favorites, setFavorites] = useState<number[]>(spots.filter(s => s.liked).map(s => s.id));
+  const [remoteSpots, setRemoteSpots] = useState<any[] | null>(null);
 
-  const filtered = spots.filter(s => {
+  useEffect(() => {
+    const load = async () => {
+      try {
+        const token = await getToken();
+        const baseUrl = import.meta.env.VITE_API_URL ? import.meta.env.VITE_API_URL.replace(/\/$/, "") : "http://localhost:3000";
+        const res = await fetch(`${baseUrl}/api/date-spots`, {
+          headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+        });
+        if (!res.ok) throw new Error('Failed to load date spots');
+        const data = await res.json();
+        // data is expected to be array of locations
+        setRemoteSpots(Array.isArray(data) ? data : []);
+      } catch (err) {
+        console.warn('Could not fetch remote date spots, using local fallback', err);
+        setRemoteSpots([]);
+      }
+    };
+
+    load();
+  }, [getToken]);
+
+  const effectiveSpots = remoteSpots && remoteSpots.length ? remoteSpots.map((s, i) => ({
+    id: s._id || s.id || String(i + 1),
+    name: s.name || s.title || 'Unknown',
+    category: s.category || 'Other',
+    icon: s.icon || Wine,
+    location: s.address || s.location || '',
+    description: s.description || '',
+    cost: s.cost || '$$',
+    rating: s.averageRating || 0,
+    reviews: s.totalReviews || 0,
+    image: s.image || '📍',
+    tags: s.tags || [],
+    hours: s.hours || 'Open',
+    liked: false,
+  })) : spots;
+
+  const filtered = effectiveSpots.filter(s => {
     const matchSearch = s.name.toLowerCase().includes(search.toLowerCase()) || s.location.toLowerCase().includes(search.toLowerCase());
     const matchCat = category === "all" || s.category === category;
     return matchSearch && matchCat;

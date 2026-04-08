@@ -148,18 +148,53 @@ const BookAppointment = () => {
       note: note.trim() || undefined,
     };
 
-    try {
-      const currentRaw = localStorage.getItem(APPOINTMENTS_STORAGE_KEY);
-      const current = currentRaw ? JSON.parse(currentRaw) : [];
-      const next = Array.isArray(current) ? [payload, ...current] : [payload];
-      localStorage.setItem(APPOINTMENTS_STORAGE_KEY, JSON.stringify(next));
-    } catch {
-      toast({ title: "Save failed", description: "Could not persist booking locally.", variant: "destructive" });
+    const makeISOStart = (d: Date, timeStr: string) => {
+      // timeStr expected like "7:00 PM" or "12:30 PM"
+      const parts = timeStr.match(/(\d{1,2}):(\d{2})\s*(AM|PM)/i);
+      if (!parts) return null;
+      let hh = Number(parts[1]);
+      const mm = Number(parts[2]);
+      const ampm = parts[3].toUpperCase();
+      if (ampm === 'PM' && hh < 12) hh += 12;
+      if (ampm === 'AM' && hh === 12) hh = 0;
+      const dt = new Date(d);
+      dt.setHours(hh, mm, 0, 0);
+      return dt.toISOString();
+    };
+
+    const startTimeISO = makeISOStart(date, time);
+    if (!startTimeISO) {
+      toast({ title: 'Invalid time', description: 'Could not parse selected time.', variant: 'destructive' });
       return;
     }
 
-    setSubmitted(true);
-    toast({ title: "Date booked! 🎉", description: "Your appointment has been scheduled." });
+    const sendToBackend = async () => {
+      try {
+        const token = await getToken();
+        const baseUrl = import.meta.env.VITE_API_URL ? import.meta.env.VITE_API_URL.replace(/\/$/, "") : "http://localhost:3000";
+        const res = await fetch(`${baseUrl}/api/appointments`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          },
+          body: JSON.stringify({ locationId: spot, startTime: startTimeISO, note: payload.note }),
+        });
+
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({}));
+          throw new Error(err?.message || 'Failed to create appointment');
+        }
+
+        setSubmitted(true);
+        toast({ title: "Date booked! 🎉", description: "Your appointment has been scheduled." });
+      } catch (err) {
+        console.error('Booking failed', err);
+        toast({ title: 'Booking failed', description: String(err?.message || err), variant: 'destructive' });
+      }
+    };
+
+    void sendToBackend();
   };
 
   if (submitted) {
