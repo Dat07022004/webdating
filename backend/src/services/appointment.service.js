@@ -111,21 +111,24 @@ export async function validateBooking({ userId, selectedTime }) {
     throw err;
   }
 
-  const activeStatuses = { $nin: ['cancelled', 'completed'] };
+  // Determine intended appointment window (2 hours)
+  const intendedStart = sel;
+  const intendedEnd = new Date(intendedStart.getTime() + 2 * 60 * 60 * 1000);
 
-  const clause = {
+  // Look for any active appointment for this user that overlaps the intended window.
+  // An overlap exists if existing.startTime < intendedEnd AND (existing.endTime > intendedStart OR existing.endTime missing)
+  const existing = await Appointment.findOne({
     userId: new mongoose.Types.ObjectId(userId),
-    status: activeStatuses,
-  };
+    status: { $nin: ['cancelled', 'completed'] },
+    startTime: { $lt: intendedEnd },
+    $or: [
+      { endTime: { $gt: intendedStart } },
+      { endTime: { $exists: false } },
+    ],
+  }).lean();
 
-  clause.$or = [
-    { endTime: { $gt: now } },
-    { endTime: { $exists: false } },
-  ];
-
-  const existing = await Appointment.findOne(clause).lean();
   if (existing) {
-    const err = new Error('Bạn đang có một lịch hẹn chưa hoàn thành');
+    const err = new Error('Bạn đang có một lịch hẹn chưa hoàn thành hoặc trùng khung giờ');
     err.status = 409;
     err.statusCode = 409;
     throw err;
@@ -175,6 +178,7 @@ export async function createAppointment({ userId, locationId, startTime, totalCo
         userId: new mongoose.Types.ObjectId(userId),
         locationId: location._id,
         startTime: start,
+        endTime: intendedEnd,
         note: typeof note === 'string' ? note.trim().slice(0, 300) : '',
         totalCost: totalCost ?? location.averagePrice,
       },
