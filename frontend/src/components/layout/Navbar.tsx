@@ -16,6 +16,7 @@ import {
   Shield,
   BarChart3,
   ChevronDown,
+  Star,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -125,6 +126,7 @@ export const Navbar = ({ isAuthenticated = false }: NavbarProps) => {
 
     return [
       { to: "/premium", label: "Premium", icon: Crown },
+      { to: "/reviews", label: "Reviews", icon: Star },
       { to: "/profile", label: "Profile", icon: User },
     ];
   }, [isAuthenticated]);

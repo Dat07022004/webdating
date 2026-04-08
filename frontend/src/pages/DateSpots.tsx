@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { useAuth } from "@clerk/clerk-react";
 import { Layout } from "@/components/layout/Layout";
 import { Card, CardContent, CardFooter, CardHeader } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -9,6 +10,7 @@ import { MapPin, Star, DollarSign, Clock, Heart, Search, Filter, Coffee, Utensil
 import { motion } from "framer-motion";
 
 const spots = [
+  // fallback static spots while backend data loads
   {
     id: 1,
     name: "Sunset Rooftop Lounge",
@@ -107,18 +109,91 @@ const costColors: Record<string, string> = {
   "$$$": "text-coral-dark",
 };
 
+type DateSpotCard = {
+  id: string;
+  name: string;
+  category: string;
+  icon: any;
+  location: string;
+  description: string;
+  cost: string;
+  rating: number;
+  reviews: number;
+  image: string;
+  tags: string[];
+  hours: string;
+  liked: boolean;
+};
+
 const DateSpots = () => {
+  const { getToken } = useAuth();
   const [search, setSearch] = useState("");
   const [category, setCategory] = useState("all");
-  const [favorites, setFavorites] = useState<number[]>(spots.filter(s => s.liked).map(s => s.id));
+  const [favorites, setFavorites] = useState<string[]>(spots.filter(s => s.liked).map(s => String(s.id)));
+  const [remoteSpots, setRemoteSpots] = useState<DateSpotCard[] | null>(null);
 
-  const filtered = spots.filter(s => {
+  useEffect(() => {
+    const load = async () => {
+      try {
+        const token = await getToken();
+        const baseUrl = import.meta.env.VITE_API_URL ? import.meta.env.VITE_API_URL.replace(/\/$/, "") : "http://localhost:3000";
+        const res = await fetch(`${baseUrl}/api/date-spots`, {
+          headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+        });
+        if (!res.ok) throw new Error('Failed to load date spots');
+        const data = await res.json();
+        const items = Array.isArray(data) ? data : Array.isArray(data?.items) ? data.items : [];
+        setRemoteSpots(
+          items.map((s: any, i: number) => ({
+            id: String(s._id || s.id || i + 1),
+            name: s.name || s.title || "Unknown",
+            category: s.category || "Other",
+            icon: s.icon || Wine,
+            location: s.address || s.location || "",
+            description: s.description || "",
+            cost: s.cost || "$$",
+            rating: s.averageRating || 0,
+            reviews: s.totalReviews || 0,
+            image: s.image || "📍",
+            tags: Array.isArray(s.tags) ? s.tags : [],
+            hours: s.hours || "Open",
+            liked: false,
+          }))
+        );
+      } catch (err) {
+        console.warn('Could not fetch remote date spots, using local fallback', err);
+        setRemoteSpots([]);
+      }
+    };
+
+    load();
+  }, [getToken]);
+
+  const effectiveSpots: DateSpotCard[] = remoteSpots && remoteSpots.length
+    ? remoteSpots
+    : spots.map((s) => ({
+        id: String(s.id),
+        name: s.name,
+        category: s.category,
+        icon: s.icon,
+        location: s.location,
+        description: s.description,
+        cost: s.cost,
+        rating: s.rating,
+        reviews: s.reviews,
+        image: s.image,
+        tags: s.tags,
+        hours: s.hours,
+        liked: s.liked,
+      }));
+
+  const filtered = effectiveSpots.filter(s => {
     const matchSearch = s.name.toLowerCase().includes(search.toLowerCase()) || s.location.toLowerCase().includes(search.toLowerCase());
     const matchCat = category === "all" || s.category === category;
     return matchSearch && matchCat;
   });
 
-  const toggleFav = (id: number) => {
+  const toggleFav = (id: string) => {
     setFavorites(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
   };
 

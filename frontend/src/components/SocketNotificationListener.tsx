@@ -69,6 +69,15 @@ export const SocketNotificationListener = () => {
           },
           duration: 5000
         });
+      } else if (data.type === 'appointment') {
+        toast.message(data.title || 'Cập nhật lịch hẹn', {
+          description: data.message || 'Bạn có cập nhật mới về lịch hẹn.',
+          action: {
+            label: 'Mở lịch hẹn',
+            onClick: () => navigate('/appointments')
+          },
+          duration: 5000
+        });
       }
     });
 
