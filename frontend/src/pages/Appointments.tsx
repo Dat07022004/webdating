@@ -2,8 +2,21 @@ import { useEffect, useMemo, useState } from "react";
 import { useAuth } from "@clerk/clerk-react";
 import { format } from "date-fns";
 import { motion } from "framer-motion";
-import { Link } from "react-router-dom";
-import { CalendarDays, Check, Clock, Loader2, MapPin, Plus, Star, Trash2, X } from "lucide-react";
+import { Link, useNavigate } from "react-router-dom";
+import {
+  CalendarDays,
+  CalendarIcon,
+  Check,
+  Clock,
+  Loader2,
+  MapPin,
+  MessageCircle,
+  Pencil,
+  Plus,
+  Star,
+  Trash2,
+  X
+} from "lucide-react";
 import { Layout } from "@/components/layout/Layout";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -11,9 +24,25 @@ import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Calendar } from "@/components/ui/calendar";
+import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
+import { cn } from "@/lib/utils";
 
 type AppointmentStatus = "confirmed" | "pending" | "completed" | "cancelled" | "scheduled";
+
+type BackendUser = {
+  _id?: string;
+  clerkId?: string;
+  username?: string;
+  profile?: {
+    personalInfo?: {
+      name?: string;
+    };
+  };
+};
 
 type BackendAppointment = {
   _id: string;
@@ -21,32 +50,8 @@ type BackendAppointment = {
   endTime?: string;
   status: AppointmentStatus;
   note?: string;
-  userId?:
-    | {
-        _id?: string;
-        clerkId?: string;
-        username?: string;
-        profile?: {
-          personalInfo?: {
-            name?: string;
-          };
-        };
-      }
-    | string
-    | null;
-  matchUserId?:
-    | {
-        _id?: string;
-        clerkId?: string;
-        username?: string;
-        profile?: {
-          personalInfo?: {
-            name?: string;
-          };
-        };
-      }
-    | string
-    | null;
+  userId?: BackendUser | string | null;
+  matchUserId?: BackendUser | string | null;
   locationId?:
     | {
         _id?: string;
@@ -59,18 +64,30 @@ type BackendAppointment = {
 
 type AppointmentCardItem = {
   id: string;
+  counterpartUserId: string;
   canCancel: boolean;
   canRespond: boolean;
+  canEdit: boolean;
+  canChat: boolean;
+  canReview: boolean;
   initials: string;
   title: string;
   spot: string;
   location: string;
   date: string;
   time: string;
+  rawStatus: AppointmentStatus;
   status: AppointmentStatus;
+  isPast: boolean;
+  startTimeISO: string;
   statusHint?: string;
   note?: string;
 };
+
+const timeSlots = [
+  "10:00 AM", "11:00 AM", "12:00 PM", "1:00 PM", "2:00 PM",
+  "3:00 PM", "4:00 PM", "5:00 PM", "6:00 PM", "7:00 PM", "8:00 PM", "9:00 PM",
+];
 
 const statusConfig: Record<AppointmentStatus, { label: string; className: string }> = {
   confirmed: { label: "Confirmed", className: "bg-success/10 text-success border-success/20" },
@@ -88,11 +105,29 @@ const getInitials = (name: string) =>
     .map((part) => part[0]?.toUpperCase() || "")
     .join("");
 
+const makeISOStart = (d: Date, timeStr: string) => {
+  const parts = timeStr.match(/(\d{1,2}):(\d{2})\s*(AM|PM)/i);
+  if (!parts) return null;
+  let hh = Number(parts[1]);
+  const mm = Number(parts[2]);
+  const ampm = parts[3].toUpperCase();
+  if (ampm === "PM" && hh < 12) hh += 12;
+  if (ampm === "AM" && hh === 12) hh = 0;
+  const dt = new Date(d);
+  dt.setHours(hh, mm, 0, 0);
+  return dt.toISOString();
+};
+
 const Appointments = () => {
   const { getToken, userId } = useAuth();
+  const navigate = useNavigate();
   const { toast } = useToast();
   const [cancelId, setCancelId] = useState<string | null>(null);
   const [respondingId, setRespondingId] = useState<string | null>(null);
+  const [editingAppointment, setEditingAppointment] = useState<AppointmentCardItem | null>(null);
+  const [editDate, setEditDate] = useState<Date>();
+  const [editTime, setEditTime] = useState("");
+  const [isSavingEdit, setIsSavingEdit] = useState(false);
   const [appointments, setAppointments] = useState<AppointmentCardItem[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
@@ -120,33 +155,44 @@ const Appointments = () => {
         }
 
         const data = await res.json();
+        const nowMs = Date.now();
         const nextAppointments = (Array.isArray(data) ? data : []).map((item: BackendAppointment) => {
-          const location =
-            item.locationId && typeof item.locationId === "object" ? item.locationId : null;
+          const location = item.locationId && typeof item.locationId === "object" ? item.locationId : null;
           const owner = item.userId && typeof item.userId === "object" ? item.userId : null;
           const guest = item.matchUserId && typeof item.matchUserId === "object" ? item.matchUserId : null;
           const isOwner = owner?.clerkId === userId;
           const isGuest = guest?.clerkId === userId;
           const counterpart = isOwner ? guest : owner;
-          const counterpartName =
-            counterpart?.profile?.personalInfo?.name || counterpart?.username || "Your match";
+          const counterpartName = counterpart?.profile?.personalInfo?.name || counterpart?.username || "Your match";
+          const counterpartUserId = counterpart?._id || "";
           const spotName = location?.name || "Date Spot";
           const place = location?.address || "Unknown location";
           const start = new Date(item.startTime);
+          const startMs = start.getTime();
+          const isPast = Number.isFinite(startMs) && startMs < nowMs;
+          const displayStatus: AppointmentStatus =
+            item.status === "cancelled" ? "cancelled" : isPast ? "completed" : item.status || "pending";
 
           return {
             id: item._id,
-            canCancel: isOwner,
-            canRespond: isGuest && item.status === "pending",
+            counterpartUserId,
+            canCancel: isOwner && !isPast && item.status !== "cancelled",
+            canRespond: isGuest && !isPast && item.status === "pending",
+            canEdit: isOwner && !isPast && item.status !== "cancelled",
+            canChat: Boolean(counterpartUserId) && !isPast && item.status === "confirmed",
+            canReview: isPast && item.status !== "cancelled",
             initials: getInitials(counterpartName),
             title: counterpartName,
             spot: spotName,
             location: place,
-            date: Number.isNaN(start.getTime()) ? "Unknown date" : format(start, "MMM d, yyyy"),
-            time: Number.isNaN(start.getTime()) ? "Unknown time" : format(start, "p"),
-            status: item.status || "pending",
+            date: Number.isNaN(startMs) ? "Unknown date" : format(start, "MMM d, yyyy"),
+            time: Number.isNaN(startMs) ? "Unknown time" : format(start, "p"),
+            rawStatus: item.status || "pending",
+            status: displayStatus,
+            isPast,
+            startTimeISO: item.startTime,
             statusHint:
-              item.status === "pending"
+              !isPast && item.status === "pending"
                 ? isGuest
                   ? "Waiting for your confirmation."
                   : `Waiting for ${counterpartName} to confirm.`
@@ -173,14 +219,134 @@ const Appointments = () => {
   }, [baseUrl, getToken, toast, userId]);
 
   const upcoming = useMemo(
-    () => appointments.filter((a) => a.status === "confirmed" || a.status === "pending" || a.status === "scheduled"),
+    () => appointments.filter((a) => !a.isPast && a.status !== "cancelled"),
     [appointments]
   );
 
   const past = useMemo(
-    () => appointments.filter((a) => a.status === "completed" || a.status === "cancelled"),
+    () => appointments.filter((a) => a.isPast || a.status === "cancelled"),
     [appointments]
   );
+
+  const handleChat = async (targetUserId: string) => {
+    try {
+      const token = await getToken();
+      const res = await fetch(`${baseUrl}/api/chat/conversations`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({ targetUserId }),
+      });
+
+      const data = await res.json().catch(() => ({}));
+      if (data?.success && data?.data?._id) {
+        navigate(`/messages?conversationId=${data.data._id}`);
+        return;
+      }
+
+      navigate("/messages");
+    } catch (error) {
+      console.error("Failed to open appointment chat:", error);
+      toast({
+        title: "Cannot open chat",
+        description: "Please try again in a moment.",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const openEditDialog = (appointment: AppointmentCardItem) => {
+    const parsed = new Date(appointment.startTimeISO);
+    setEditingAppointment(appointment);
+    setEditDate(parsed);
+    setEditTime(format(parsed, "h:mm aa"));
+  };
+
+  const closeEditDialog = () => {
+    setEditingAppointment(null);
+    setEditDate(undefined);
+    setEditTime("");
+    setIsSavingEdit(false);
+  };
+
+  const handleSaveEdit = async () => {
+    if (!editingAppointment || !editDate || !editTime) {
+      toast({
+        title: "Missing schedule",
+        description: "Please select both a new date and time.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    const nextStartISO = makeISOStart(editDate, editTime);
+    if (!nextStartISO) {
+      toast({
+        title: "Invalid time",
+        description: "Could not parse the selected time.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    try {
+      setIsSavingEdit(true);
+      const token = await getToken();
+      const res = await fetch(`${baseUrl}/api/appointments/${editingAppointment.id}`, {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({ startTime: nextStartISO }),
+      });
+
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err?.message || "Failed to reschedule appointment");
+      }
+
+      const nextDate = new Date(nextStartISO);
+      setAppointments((prev) =>
+        prev.map((item) =>
+          item.id === editingAppointment.id
+            ? {
+                ...item,
+                rawStatus: "pending",
+                status: "pending",
+                startTimeISO: nextStartISO,
+                date: format(nextDate, "MMM d, yyyy"),
+                time: format(nextDate, "p"),
+                isPast: false,
+                canCancel: true,
+                canEdit: true,
+                canChat: false,
+                canReview: false,
+                canRespond: false,
+                statusHint: `Waiting for ${item.title} to confirm.`,
+              }
+            : item
+        )
+      );
+
+      closeEditDialog();
+      toast({
+        title: "Appointment updated",
+        description: "The new time was saved and sent for confirmation again.",
+      });
+    } catch (error) {
+      console.error("Failed to reschedule appointment:", error);
+      toast({
+        title: "Edit failed",
+        description: String(error instanceof Error ? error.message : error),
+        variant: "destructive",
+      });
+    } finally {
+      setIsSavingEdit(false);
+    }
+  };
 
   const handleCancel = async () => {
     if (!cancelId) return;
@@ -198,7 +364,21 @@ const Appointments = () => {
       }
 
       setAppointments((prev) =>
-        prev.map((item) => (item.id === cancelId ? { ...item, status: "cancelled" } : item))
+        prev.map((item) =>
+          item.id === cancelId
+            ? {
+                ...item,
+                rawStatus: "cancelled",
+                status: "cancelled",
+                canCancel: false,
+                canEdit: false,
+                canChat: false,
+                canRespond: false,
+                canReview: false,
+                statusHint: undefined,
+              }
+            : item
+        )
       );
       toast({ title: "Appointment cancelled", description: "Your date has been cancelled." });
     } catch (error) {
@@ -231,11 +411,19 @@ const Appointments = () => {
         throw new Error(err?.message || "Failed to respond to appointment");
       }
 
+      const nextRawStatus: AppointmentStatus = action === "confirm" ? "confirmed" : "cancelled";
       const nextStatus: AppointmentStatus = action === "confirm" ? "confirmed" : "cancelled";
       setAppointments((prev) =>
         prev.map((item) =>
           item.id === appointmentId
-            ? { ...item, status: nextStatus, canRespond: false, statusHint: undefined }
+            ? {
+                ...item,
+                rawStatus: nextRawStatus,
+                status: nextStatus,
+                canRespond: false,
+                canChat: action === "confirm" && !item.isPast,
+                statusHint: undefined,
+              }
             : item
         )
       );
@@ -258,7 +446,7 @@ const Appointments = () => {
     }
   };
 
-  const AppointmentCard = ({ apt, showActions }: { apt: AppointmentCardItem; showActions: boolean }) => (
+  const AppointmentCard = ({ apt }: { apt: AppointmentCardItem }) => (
     <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}>
       <Card className="gradient-card hover:shadow-md transition-all">
         <CardContent className="p-5">
@@ -311,20 +499,31 @@ const Appointments = () => {
                   </Button>
                 </div>
               ) : null}
-              {showActions ? (
-                <div className="flex gap-2 mt-3">
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    className="gap-1 text-destructive hover:text-destructive"
-                    onClick={() => setCancelId(apt.id)}
-                    disabled={!apt.canCancel}
-                  >
-                    <Trash2 className="w-3.5 h-3.5" />Cancel
-                  </Button>
+              {apt.canEdit || apt.canChat || apt.canCancel ? (
+                <div className="flex gap-2 mt-3 flex-wrap">
+                  {apt.canEdit ? (
+                    <Button size="sm" variant="outline" className="gap-1" onClick={() => openEditDialog(apt)}>
+                      <Pencil className="w-3.5 h-3.5" />Edit
+                    </Button>
+                  ) : null}
+                  {apt.canChat ? (
+                    <Button size="sm" variant="outline" className="gap-1" onClick={() => handleChat(apt.counterpartUserId)}>
+                      <MessageCircle className="w-3.5 h-3.5" />Chat
+                    </Button>
+                  ) : null}
+                  {apt.canCancel ? (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="gap-1 text-destructive hover:text-destructive"
+                      onClick={() => setCancelId(apt.id)}
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />Cancel
+                    </Button>
+                  ) : null}
                 </div>
               ) : null}
-              {apt.status === "completed" ? (
+              {apt.canReview ? (
                 <div className="mt-3">
                   <Button size="sm" variant="soft" className="gap-1" asChild>
                     <Link to={`/review/${apt.id}`}><Star className="w-3.5 h-3.5" />Leave Review</Link>
@@ -346,6 +545,9 @@ const Appointments = () => {
       <Button variant="gradient" asChild><Link to="/date-spots">Browse Date Spots</Link></Button>
     </div>
   );
+
+  const startOfToday = new Date();
+  startOfToday.setHours(0, 0, 0, 0);
 
   return (
     <Layout isAuthenticated>
@@ -374,7 +576,7 @@ const Appointments = () => {
                   Loading appointments...
                 </div>
               ) : upcoming.length > 0 ? (
-                upcoming.map((apt) => <AppointmentCard key={apt.id} apt={apt} showActions={apt.canCancel} />)
+                upcoming.map((apt) => <AppointmentCard key={apt.id} apt={apt} />)
               ) : (
                 renderEmptyState("No upcoming dates")
               )}
@@ -387,7 +589,7 @@ const Appointments = () => {
                   Loading appointments...
                 </div>
               ) : past.length > 0 ? (
-                past.map((apt) => <AppointmentCard key={apt.id} apt={apt} showActions={false} />)
+                past.map((apt) => <AppointmentCard key={apt.id} apt={apt} />)
               ) : (
                 renderEmptyState("No past dates")
               )}
@@ -405,6 +607,63 @@ const Appointments = () => {
           <DialogFooter>
             <Button variant="outline" onClick={() => setCancelId(null)}>Keep Date</Button>
             <Button variant="destructive" onClick={handleCancel}>Cancel Date</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={Boolean(editingAppointment)} onOpenChange={(open) => { if (!open) closeEditDialog(); }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle className="font-serif">Reschedule Appointment</DialogTitle>
+            <DialogDescription>
+              Choosing a new time will send this appointment back to pending so your match can confirm again.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4">
+            <div>
+              <Label className="mb-2 block">Date</Label>
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button variant="outline" className={cn("w-full justify-start text-left font-normal", !editDate && "text-muted-foreground")}>
+                    <CalendarIcon className="mr-2 h-4 w-4" />
+                    {editDate ? format(editDate, "PPP") : "Pick a date"}
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-auto p-0" align="start">
+                  <Calendar
+                    mode="single"
+                    selected={editDate}
+                    onSelect={setEditDate}
+                    disabled={(d) => d < startOfToday}
+                    initialFocus
+                    className={cn("p-3 pointer-events-auto")}
+                  />
+                </PopoverContent>
+              </Popover>
+            </div>
+
+            <div>
+              <Label className="mb-2 block">Time</Label>
+              <Select value={editTime} onValueChange={setEditTime}>
+                <SelectTrigger>
+                  <Clock className="w-4 h-4 mr-2" />
+                  <SelectValue placeholder="Select time" />
+                </SelectTrigger>
+                <SelectContent>
+                  {timeSlots.map((time) => (
+                    <SelectItem key={time} value={time}>{time}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={closeEditDialog}>Cancel</Button>
+            <Button variant="gradient" onClick={handleSaveEdit} disabled={isSavingEdit}>
+              {isSavingEdit ? "Saving..." : "Save Changes"}
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

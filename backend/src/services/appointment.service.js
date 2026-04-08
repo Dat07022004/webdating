@@ -125,33 +125,23 @@ export async function validateBooking({ userId, locationId, selectedTime, sessio
   const userObjId = new mongoose.Types.ObjectId(userId);
   const locObjId = new mongoose.Types.ObjectId(locationId);
 
-  const overlapQuery = {
-    status: { $nin: ['cancelled', 'completed'] },
-    startTime: { $lt: endTime },
-    endTime: { $gt: startTime },
-  };
-
-  const userConflict = await Appointment.findOne(
-    {
-      userId: userObjId,
-      ...overlapQuery,
-    },
-    null,
-    { session }
-  ).lean();
+  const userConflict = await findParticipantConflict({
+    participantId: userObjId,
+    startTime,
+    endTime,
+    session,
+  });
 
   if (userConflict) {
     throw createServiceError(409, 'Bạn đã có lịch hẹn khác trong khung giờ này');
   }
 
-  const locationConflict = await Appointment.findOne(
-    {
-      locationId: locObjId,
-      ...overlapQuery,
-    },
-    null,
-    { session }
-  ).lean();
+  const locationConflict = await findLocationConflict({
+    locationId: locObjId,
+    startTime,
+    endTime,
+    session,
+  });
 
   if (locationConflict) {
     throw createServiceError(409, 'Địa điểm đã bị đặt trong khung giờ này');
@@ -238,6 +228,17 @@ export async function createAppointment({ userId, matchUserId, locationId, start
 
     if (!matchedConnection) {
       throw createServiceError(403, 'Chỉ có thể đặt lịch với người đã match');
+    }
+
+    const guestConflict = await findParticipantConflict({
+      participantId: matchUserObjectId,
+      startTime: normalizedBooking.startTime,
+      endTime: normalizedBooking.endTime,
+      session,
+    });
+
+    if (guestConflict) {
+      throw createServiceError(409, 'Người được hẹn đã có lịch khác trong khung giờ này');
     }
 
     const createdAppointments = await Appointment.create(
@@ -342,6 +343,9 @@ export async function respondToAppointment({ appointmentId, requesterObjectId, a
   if (appt.status !== 'pending') {
     throw createServiceError(409, 'Lịch hẹn này không còn chờ xác nhận');
   }
+  if (new Date(appt.startTime).getTime() < Date.now()) {
+    throw createServiceError(409, 'Lịch hẹn này đã qua thời gian xác nhận');
+  }
 
   appt.status = action === 'confirm' ? 'confirmed' : 'cancelled';
   const saved = await appt.save();
@@ -393,33 +397,82 @@ export async function updateAppointment(id, { startTime, status }) {
   const appt = await Appointment.findById(id).exec();
   if (!appt) throw createServiceError(404, 'Appointment not found');
 
+  const now = new Date();
+  if (new Date(appt.startTime).getTime() < now.getTime()) {
+    throw createServiceError(400, 'Không thể chỉnh sửa lịch hẹn đã qua');
+  }
+
   if (startTime) {
     const newStart = new Date(startTime);
     if (Number.isNaN(newStart.getTime())) throw createServiceError(400, 'Invalid startTime');
+    if (newStart.getTime() < now.getTime()) {
+      throw createServiceError(400, 'Không thể chọn thời gian trong quá khứ');
+    }
     const newEnd = new Date(newStart.getTime() + 2 * 60 * 60 * 1000);
 
-    const conflict = await Appointment.findOne({
-      locationId: appt.locationId,
-      _id: { $ne: appt._id },
-      status: { $nin: ['cancelled', 'completed'] },
-      startTime: { $lt: newEnd },
-      endTime: { $gt: newStart },
-    }).exec();
+    const ownerConflict = await findParticipantConflict({
+      participantId: appt.userId,
+      startTime: newStart,
+      endTime: newEnd,
+      excludeAppointmentId: appt._id,
+    });
 
-    if (conflict) {
-      const err = new Error('Time slot occupied');
-      err.status = 409;
-      err.statusCode = 409;
-      throw err;
+    if (ownerConflict) {
+      throw createServiceError(409, 'Bạn đã có lịch hẹn khác trong khung giờ này');
+    }
+
+    const guestConflict = await findParticipantConflict({
+      participantId: appt.matchUserId,
+      startTime: newStart,
+      endTime: newEnd,
+      excludeAppointmentId: appt._id,
+    });
+
+    if (guestConflict) {
+      throw createServiceError(409, 'Người được hẹn đã có lịch khác trong khung giờ này');
+    }
+
+    const locationConflict = await findLocationConflict({
+      locationId: appt.locationId,
+      startTime: newStart,
+      endTime: newEnd,
+      excludeAppointmentId: appt._id,
+    });
+
+    if (locationConflict) {
+      throw createServiceError(409, 'Địa điểm đã bị đặt trong khung giờ này');
     }
 
     appt.startTime = newStart;
     appt.endTime = newEnd;
+    if (appt.status !== 'cancelled') {
+      appt.status = 'pending';
+    }
   }
 
   if (status) appt.status = status;
 
   const saved = await appt.save();
+
+  if (startTime) {
+    const owner = await User.findById(appt.userId).select('username profile.personalInfo.name profile.avatarUrl').lean();
+    const location = await Location.findById(appt.locationId).select('name').lean();
+    const ownerName = owner?.profile?.personalInfo?.name || owner?.username || 'Ai đó';
+    const startStr = new Date(saved.startTime).toLocaleString();
+
+    await createAppointmentNotification({
+      userId: appt.matchUserId,
+      senderId: appt.userId,
+      image: owner?.profile?.avatarUrl || '',
+      title: 'Lịch hẹn đã được đề xuất lại',
+      message: `${ownerName} đã đổi lịch hẹn tại ${location?.name || 'địa điểm'} sang ${startStr}. Hãy xác nhận lại lịch hẹn này.`,
+      metadata: {
+        appointmentId: saved._id?.toString(),
+        action: 'reschedule',
+      },
+    });
+  }
+
   return saved;
 }
 
@@ -490,6 +543,39 @@ async function createAppointmentNotification({ userId, senderId, title, message,
   }
 
   return true;
+}
+
+async function findParticipantConflict({ participantId, startTime, endTime, excludeAppointmentId = null, session = null }) {
+  const query = {
+    status: { $nin: ['cancelled', 'completed'] },
+    startTime: { $lt: endTime },
+    endTime: { $gt: startTime },
+    $or: [
+      { userId: participantId },
+      { matchUserId: participantId },
+    ],
+  };
+
+  if (excludeAppointmentId) {
+    query._id = { $ne: excludeAppointmentId };
+  }
+
+  return Appointment.findOne(query, null, { session }).lean();
+}
+
+async function findLocationConflict({ locationId, startTime, endTime, excludeAppointmentId = null, session = null }) {
+  const query = {
+    locationId,
+    status: { $nin: ['cancelled', 'completed'] },
+    startTime: { $lt: endTime },
+    endTime: { $gt: startTime },
+  };
+
+  if (excludeAppointmentId) {
+    query._id = { $ne: excludeAppointmentId };
+  }
+
+  return Appointment.findOne(query, null, { session }).lean();
 }
 
 function createServiceError(status, message) {
@@ -637,46 +723,96 @@ async function getUserByClerkId(clerkId) {
   return User.findOne({ clerkId }).select('_id clerkId').lean();
 }
 
-export async function createReviewByClerkId({ clerkId, payload }) {
-  const currentUser = await getUserByClerkId(clerkId);
-  if (!currentUser) throw createServiceError(401, 'Unauthorized');
-
-  const { appointmentId, rating, tags, comment, wouldMeetAgain, revieweeUserId } = payload || {};
-  if (!appointmentId) throw createServiceError(400, 'appointmentId is required');
-
+async function getReviewContext({ currentUserId, appointmentId }) {
   if (!mongoose.Types.ObjectId.isValid(appointmentId)) {
     throw createServiceError(400, 'Invalid appointmentId');
   }
 
-  const normalizedRating = Number(rating);
-  if (!Number.isFinite(normalizedRating) || normalizedRating < 1 || normalizedRating > 5) {
-    throw createServiceError(400, 'rating must be from 1 to 5');
-  }
+  const appointment = await Appointment.findById(appointmentId)
+    .populate('locationId', 'name address category')
+    .populate('userId', 'username profile.personalInfo.name profile.avatarUrl')
+    .populate('matchUserId', 'username profile.personalInfo.name profile.avatarUrl')
+    .lean();
 
-  const appointment = await Appointment.findById(appointmentId).lean();
   if (!appointment) throw createServiceError(404, 'Appointment not found');
 
-  if (String(appointment.userId) !== String(currentUser._id)) {
+  const isCreator = String(appointment.userId?._id || appointment.userId) === String(currentUserId);
+  const isInvitee = String(appointment.matchUserId?._id || appointment.matchUserId) === String(currentUserId);
+
+  if (!isCreator && !isInvitee) {
     throw createServiceError(403, 'Forbidden');
+  }
+
+  if (appointment.status === 'cancelled') {
+    throw createServiceError(400, 'Cannot review a cancelled appointment');
   }
 
   if (new Date(appointment.startTime).getTime() > Date.now()) {
     throw createServiceError(400, 'Cannot review before appointment time');
   }
 
-  const existing = await Review.findOne({ appointmentId: appointment._id }).lean();
+  const counterpart = isCreator ? appointment.matchUserId : appointment.userId;
+
+  return {
+    appointment,
+    counterpart,
+    reviewerUserId: currentUserId,
+    revieweeUserId: counterpart?._id || counterpart || null,
+  };
+}
+
+export async function getReviewFormByClerkId({ clerkId, appointmentId }) {
+  const currentUser = await getUserByClerkId(clerkId);
+  if (!currentUser) throw createServiceError(401, 'Unauthorized');
+
+  const context = await getReviewContext({ currentUserId: currentUser._id, appointmentId });
+  const existingReview = await Review.findOne({
+    appointmentId: context.appointment._id,
+    reviewerUserId: currentUser._id,
+  }).lean();
+
+  return {
+    appointment: {
+      id: context.appointment._id,
+      startTime: context.appointment.startTime,
+      endTime: context.appointment.endTime,
+      status: context.appointment.status,
+      note: context.appointment.note || '',
+      location: context.appointment.locationId,
+      counterpart: context.counterpart,
+    },
+    existingReview,
+  };
+}
+
+export async function createReviewByClerkId({ clerkId, payload }) {
+  const currentUser = await getUserByClerkId(clerkId);
+  if (!currentUser) throw createServiceError(401, 'Unauthorized');
+
+  const { appointmentId, rating, tags, comment, wouldMeetAgain } = payload || {};
+  if (!appointmentId) throw createServiceError(400, 'appointmentId is required');
+
+  const normalizedRating = Number(rating);
+  if (!Number.isFinite(normalizedRating) || normalizedRating < 1 || normalizedRating > 5) {
+    throw createServiceError(400, 'rating must be from 1 to 5');
+  }
+
+  const context = await getReviewContext({ currentUserId: currentUser._id, appointmentId });
+  const { appointment, revieweeUserId } = context;
+
+  const existing = await Review.findOne({
+    appointmentId: appointment._id,
+    reviewerUserId: currentUser._id,
+  }).lean();
   if (existing) {
-    throw createServiceError(409, 'Review already exists for this appointment');
+    throw createServiceError(409, 'You already reviewed this appointment');
   }
 
   return Review.create({
     appointmentId: appointment._id,
     locationId: appointment.locationId,
     reviewerUserId: currentUser._id,
-    revieweeUserId:
-      revieweeUserId && mongoose.Types.ObjectId.isValid(revieweeUserId)
-        ? new mongoose.Types.ObjectId(revieweeUserId)
-        : null,
+    revieweeUserId,
     rating: normalizedRating,
     tags: Array.isArray(tags) ? tags.filter(Boolean).slice(0, 10) : [],
     comment: typeof comment === 'string' ? comment.trim().slice(0, 500) : '',
@@ -690,6 +826,20 @@ export async function getMyReviewsByClerkId(clerkId) {
 
   return Review.find({ reviewerUserId: currentUser._id })
     .populate('locationId', 'name address category')
+    .populate('revieweeUserId', 'username profile.personalInfo.name profile.avatarUrl')
+    .populate('appointmentId', 'startTime endTime status')
+    .sort({ createdAt: -1 })
+    .lean();
+}
+
+export async function getReceivedReviewsByClerkId(clerkId) {
+  const currentUser = await getUserByClerkId(clerkId);
+  if (!currentUser) throw createServiceError(401, 'Unauthorized');
+
+  return Review.find({ revieweeUserId: currentUser._id, status: 'published' })
+    .populate('locationId', 'name address category')
+    .populate('reviewerUserId', 'username profile.personalInfo.name profile.avatarUrl')
+    .populate('appointmentId', 'startTime endTime status')
     .sort({ createdAt: -1 })
     .lean();
 }

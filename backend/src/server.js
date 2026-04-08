@@ -16,6 +16,7 @@ import adminRoutes from "./routes/admin.route.js";
 import revenueRoutes from "./routes/revenue.routes.js";
 import appointmentsRoutes from "./routes/appointments.routes.js";
 import dateSpotsRoutes from "./routes/dateSpots.routes.js";
+import reviewRoutes from "./routes/review.routes.js";
 import { requireActiveUser } from "./middleware/auth.middleware.js";
 import safetyRoutes from "./routes/safety.routes.js";
 
@@ -60,6 +61,7 @@ app.use("/api/upload", requireActiveUser, uploadRoutes);
 app.use("/api/premium", requireActiveUser, premiumRoutes);
 app.use("/api/appointments", requireActiveUser, appointmentsRoutes);
 app.use("/api/date-spots", requireActiveUser, dateSpotsRoutes);
+app.use("/api/reviews", requireActiveUser, reviewRoutes);
 app.use("/api/notifications", notificationRoutes);
 
 app.use("/api/admin", adminRoutes);

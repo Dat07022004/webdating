@@ -6,7 +6,6 @@ const reviewSchema = new mongoose.Schema(
       type: mongoose.Schema.Types.ObjectId,
       ref: 'Appointment',
       required: true,
-      unique: true,
       index: true,
     },
     locationId: { type: mongoose.Schema.Types.ObjectId, ref: 'Location', required: true, index: true },
@@ -20,5 +19,7 @@ const reviewSchema = new mongoose.Schema(
   },
   { timestamps: true }
 );
+
+reviewSchema.index({ appointmentId: 1, reviewerUserId: 1 }, { unique: true });
 
 export const Review = mongoose.models.Review || mongoose.model('Review', reviewSchema);
