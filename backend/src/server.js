@@ -94,8 +94,6 @@ const startServer = async () => {
   });
 };
 
-if (process.env.NODE_ENV !== "test") {
-  startServer();
-}
+ startServer();
 
 export default app;
