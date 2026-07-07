@@ -27,13 +27,45 @@ import { initSocket } from "./socket/index.js";
 import cors from "cors";
 
 const app = express();
+const defaultAllowedOrigins = [
+  "https://heartly-webdating-frontend-8h1el.sevalla.app",
+  "http://localhost:5173",
+  "http://127.0.0.1:5173",
+  "http://localhost:3000",
+];
+
+const normalizeOrigin = (origin) => origin?.trim().replace(/\/$/, "");
+
+const allowedOrigins = new Set(
+  [ENV.ALLOWED_ORIGINS, ENV.FRONTEND_URL, ENV.API_BASE_URL]
+    .flatMap((value) => {
+      if (!value) return [];
+
+      if (value.trim() === "*") {
+        return ["*"];
+      }
+
+      return value
+        .split(",")
+        .map((item) => normalizeOrigin(item))
+        .filter(Boolean);
+    })
+    .concat(defaultAllowedOrigins.map((origin) => normalizeOrigin(origin))),
+);
+
 const corsOptions = {
-  origin: [
-    "https://heartly-webdating-frontend-8h1el.sevalla.app",
-    "http://localhost:5173",
-    "http://127.0.0.1:5173",
-    "http://localhost:3000",
-  ],
+  origin: (origin, callback) => {
+    if (
+      !origin ||
+      allowedOrigins.has("*") ||
+      allowedOrigins.has(normalizeOrigin(origin))
+    ) {
+      callback(null, true);
+      return;
+    }
+
+    callback(null, false);
+  },
   credentials: true,
   methods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
   allowedHeaders: ["Content-Type", "Authorization", "Accept"],
