@@ -193,7 +193,10 @@ export default function Profile() {
           query.set("email", email);
         }
 
-        const response = await fetch(`${apiBaseUrl}/api/users/me?${query.toString()}`);
+        const token = await getToken();
+        const response = await fetch(`${apiBaseUrl}/api/users/me?${query.toString()}`, {
+          headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+        });
         const data = (await response.json().catch(() => ({}))) as {
           message?: string;
           profile?: ProfileData;
@@ -662,8 +665,10 @@ export default function Profile() {
       body.append("clerkId", user?.id || "");
       filesToUpload.forEach((file) => body.append("photos", file));
 
+      const token = await getToken();
       const response = await fetch(`${apiBaseUrl}/api/users/photos/upload`, {
         method: "POST",
+        headers: token ? { Authorization: `Bearer ${token}` } : undefined,
         body,
       });
 
@@ -707,9 +712,13 @@ export default function Profile() {
     setIsSaving(true);
 
     try {
+      const token = await getToken();
       const response = await fetch(`${apiBaseUrl}/api/users/me`, {
         method: "PUT",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
         body: JSON.stringify({
           clerkId: user?.id || "",
           email: user?.primaryEmailAddress?.emailAddress || "",
