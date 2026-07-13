@@ -1,0 +1,9 @@
+{
+  "AllowOrigins": [
+    "https://feature-deploy.d2ng4c3woa409a.amplifyapp.com"
+  ],
+  "AllowMethods": ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+  "AllowHeaders": ["Content-Type", "Authorization", "Accept"],
+  "AllowCredentials": true,
+  "MaxAge": 3600
+}

@@ -11,6 +11,7 @@ export const initializeSocket = (token: string): Socket => {
   if (!socket) {
     socket = io(SOCKET_URL, {
       auth: { token },
+      transports: ["websocket"],
       reconnection: true,
       reconnectionAttempts: 5,
     });
