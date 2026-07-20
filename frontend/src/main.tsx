@@ -7,7 +7,13 @@ const PUBLISHABLE_KEY = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY;
 if (!PUBLISHABLE_KEY) throw new Error("Missing Clerk Publishable Key");
 
 createRoot(document.getElementById("root")!).render(
-  <ClerkProvider publishableKey={PUBLISHABLE_KEY}>
+  <ClerkProvider
+    publishableKey={PUBLISHABLE_KEY}
+    signInFallbackRedirectUrl="/discover"
+    signInForceRedirectUrl="/discover"
+    signUpFallbackRedirectUrl="/onboarding"
+    signUpForceRedirectUrl="/onboarding"
+  >
     <App />
   </ClerkProvider>
 );

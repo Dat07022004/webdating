@@ -13,6 +13,9 @@ export default function Register() {
               routing="hash"
               signInUrl="/login"
               fallbackRedirectUrl="/onboarding"
+              forceRedirectUrl="/onboarding"
+              signInFallbackRedirectUrl="/discover"
+              signInForceRedirectUrl="/discover"
             />
           </motion.div>
         </div>

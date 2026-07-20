@@ -3,7 +3,7 @@ import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
-import { useAuth } from "@clerk/clerk-react";
+import { AuthenticateWithRedirectCallback, useAuth } from "@clerk/clerk-react";
 import Landing from "./pages/Landing";
 import Login from "./pages/Login";
 import Register from "./pages/Register";
@@ -45,6 +45,17 @@ const App = () => (
           <Route path="/" element={<Landing />} />
           <Route path="/login" element={<Login />} />
           <Route path="/register" element={<Register />} />
+          <Route
+            path="/sso-callback"
+            element={
+              <AuthenticateWithRedirectCallback
+                signInFallbackRedirectUrl="/discover"
+                signInForceRedirectUrl="/discover"
+                signUpFallbackRedirectUrl="/onboarding"
+                signUpForceRedirectUrl="/onboarding"
+              />
+            }
+          />
           <Route path="/onboarding" element={<ProtectedRoute><Onboarding /></ProtectedRoute>} />
           <Route path="/discover" element={<ProtectedRoute><Discover /></ProtectedRoute>} />
           <Route path="/matches" element={<ProtectedRoute><Matches /></ProtectedRoute>} />

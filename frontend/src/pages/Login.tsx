@@ -28,6 +28,9 @@ export default function Login() {
               routing="hash"
               signUpUrl="/register"
               fallbackRedirectUrl="/discover"
+              forceRedirectUrl="/discover"
+              signUpFallbackRedirectUrl="/onboarding"
+              signUpForceRedirectUrl="/onboarding"
             />
           </motion.div>
         </div>
