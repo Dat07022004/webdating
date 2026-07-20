@@ -26,10 +26,17 @@ export interface Message {
   conversationId: string;
   senderId: string;
   receiverId: string;
-  type: "text" | "image";
+  type: "text" | "image" | "call";
   content: string;
   seen: boolean;
   createdAt: string;
+  metadata?: {
+    callId?: string;
+    callType?: "audio" | "video";
+    callStatus?: "missed" | "rejected" | "completed" | "failed";
+    durationSeconds?: number;
+    reason?: string | null;
+  } | null;
 }
 
 export const useChat = (activeConversationId?: string | null) => {

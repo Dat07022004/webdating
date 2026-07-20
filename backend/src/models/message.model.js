@@ -22,7 +22,7 @@ const messageSchema = new mongoose.Schema(
 
     type: {
       type: String,
-      enum: ['text', 'image'],
+      enum: ['text', 'image', 'call'],
       default: 'text',
     },
 
@@ -39,6 +39,11 @@ const messageSchema = new mongoose.Schema(
 
     seenAt: {
       type: Date,
+      default: null,
+    },
+
+    metadata: {
+      type: mongoose.Schema.Types.Mixed,
       default: null,
     },
   },

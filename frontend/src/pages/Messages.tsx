@@ -16,8 +16,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import { useChat, ChatUser, Conversation } from "@/hooks/useChat";
-import { useWebRTC } from "@/hooks/useWebRTC";
-import { VideoCallModal } from "@/components/chat/VideoCallModal";
+import { useCall } from "@/contexts/CallContext";
 import { format } from "date-fns";
 
 export default function Messages() {
@@ -54,22 +53,17 @@ export default function Messages() {
     (p) => p.clerkId === currentClerkId,
   )?._id;
 
-  const {
-    callState,
-    incomingCallerId,
-    localVideoRef,
-    remoteVideoRef,
-    startCall,
-    answerCall,
-    rejectCall,
-    endCall,
-  } = useWebRTC();
+  const { startCall } = useCall();
 
-  const handleVideoCall = () => {
+  const startSelectedCall = (callType: "audio" | "video") => {
     if (!selectedChat) return;
     const otherUser = getOtherUser(selectedChat);
     if (!otherUser) return;
-    startCall(otherUser._id);
+    void startCall(otherUser._id, callType, {
+      conversationId: selectedChat._id,
+      peerName: otherUser.profile.personalInfo.name,
+      peerImage: otherUser.profile.avatarUrl,
+    });
   };
 
   useEffect(() => {
@@ -96,24 +90,6 @@ export default function Messages() {
       .toLowerCase()
       .includes(searchQuery.toLowerCase());
   });
-
-  const incomingCallerProfile = conversations
-    .flatMap((conv) => conv.participants)
-    .find((participant) => participant._id === incomingCallerId);
-
-  const modalCallerName =
-    callState === "receiving"
-      ? incomingCallerProfile?.profile.personalInfo.name || "Incoming call"
-      : selectedChat
-        ? getOtherUser(selectedChat)?.profile.personalInfo.name
-        : "User";
-
-  const modalCallerImage =
-    callState === "receiving"
-      ? incomingCallerProfile?.profile.avatarUrl
-      : selectedChat
-        ? getOtherUser(selectedChat)?.profile.avatarUrl
-        : undefined;
 
   return (
     <Layout isAuthenticated>
@@ -199,7 +175,9 @@ export default function Messages() {
                         {conversation.lastMessage
                           ? conversation.lastMessage.type === "text"
                             ? conversation.lastMessage.content
-                            : "Sent an image"
+                            : conversation.lastMessage.type === "call"
+                              ? conversation.lastMessage.content
+                              : "Sent an image"
                           : "No messages yet"}
                       </p>
                     </div>
@@ -265,14 +243,14 @@ export default function Messages() {
                       <Button
                         variant="ghost"
                         size="icon"
-                        onClick={handleVideoCall}
+                        onClick={() => startSelectedCall("audio")}
                       >
                         <Phone className="w-5 h-5" />
                       </Button>
                       <Button
                         variant="ghost"
                         size="icon"
-                        onClick={handleVideoCall}
+                        onClick={() => startSelectedCall("video")}
                       >
                         <Video className="w-5 h-5" />
                       </Button>
@@ -286,23 +264,34 @@ export default function Messages() {
 
               {/* Messages */}
               <div className="flex-1 overflow-y-auto p-4 space-y-4">
-                {messages.map((msg) => (
-                  <ChatBubble
-                    key={msg._id}
-                    message={msg.type === "text" ? msg.content : ""}
-                    timestamp={format(new Date(msg.createdAt), "HH:mm")}
-                    isOwn={msg.senderId === currentUserId}
-                    status={msg.seen ? "read" : "sent"}
-                    image={msg.type === "image" ? msg.content : undefined}
-                  />
-                ))}
+                {messages.map((msg) =>
+                  msg.type === "call" ? (
+                    <div
+                      key={msg._id}
+                      className="flex justify-center px-4"
+                    >
+                      <div className="rounded-full bg-secondary px-4 py-2 text-xs text-muted-foreground">
+                        {msg.content} lúc {format(new Date(msg.createdAt), "HH:mm")}
+                      </div>
+                    </div>
+                  ) : (
+                    <ChatBubble
+                      key={msg._id}
+                      message={msg.type === "text" ? msg.content : ""}
+                      timestamp={format(new Date(msg.createdAt), "HH:mm")}
+                      isOwn={msg.senderId === currentUserId}
+                      status={msg.seen ? "read" : "sent"}
+                      image={msg.type === "image" ? msg.content : undefined}
+                    />
+                  ),
+                )}
                 <div ref={messagesEndRef} />
               </div>
 
               {/* Input */}
               <ChatInput
                 onSend={handleSendMessage}
-                onVideoCall={handleVideoCall}
+                onVideoCall={() => startSelectedCall("video")}
               />
             </>
           ) : (
@@ -322,17 +311,6 @@ export default function Messages() {
           )}
         </div>
       </div>
-
-      <VideoCallModal
-        callState={callState}
-        localVideoRef={localVideoRef}
-        remoteVideoRef={remoteVideoRef}
-        onEndCall={endCall}
-        onRejectCall={rejectCall}
-        onAnswerCall={answerCall}
-        callerName={modalCallerName}
-        callerImage={modalCallerImage}
-      />
     </Layout>
   );
 }
