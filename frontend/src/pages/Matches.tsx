@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { useAuth } from "@clerk/clerk-react";
 import { motion } from "framer-motion";
 import { Heart, Sparkles } from "lucide-react";
@@ -9,7 +9,6 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
 import { ReportUserDialog } from "@/components/ReportUserDialog";
 import { BlockUserDialog } from "@/components/BlockUserDialog";
-import { useSocket } from "@/hooks/useSocket";
 
 interface MatchUser {
   id: string;
@@ -25,7 +24,6 @@ export default function Matches() {
   const navigate = useNavigate();
   const { getToken } = useAuth();
   const { toast } = useToast();
-  const { socket } = useSocket();
 
   const [matches, setMatches] = useState<MatchUser[]>([]);
   const [likes, setLikes] = useState<MatchUser[]>([]);
@@ -36,7 +34,7 @@ export default function Matches() {
   const [reportTarget, setReportTarget] = useState<MatchUser | null>(null);
   const [blockTarget, setBlockTarget] = useState<MatchUser | null>(null);
 
-  const fetchConnections = useCallback(async () => {
+  const fetchConnections = async () => {
     try {
       const token = await getToken();
       if (!token) return;
@@ -58,34 +56,11 @@ export default function Matches() {
     } finally {
       setIsLoading(false);
     }
-  }, [getToken]);
+  };
 
   useEffect(() => {
     fetchConnections();
-  }, [fetchConnections]);
-
-  useEffect(() => {
-    if (!socket) return;
-
-    const refreshMatches = () => {
-      fetchConnections();
-    };
-    const refreshOnConnectionNotification = (data: { type?: string }) => {
-      if (data?.type === "like" || data?.type === "match") {
-        fetchConnections();
-      }
-    };
-
-    socket.on("new_match", refreshMatches);
-    socket.on("connection_updated", refreshMatches);
-    socket.on("new_notification", refreshOnConnectionNotification);
-
-    return () => {
-      socket.off("new_match", refreshMatches);
-      socket.off("connection_updated", refreshMatches);
-      socket.off("new_notification", refreshOnConnectionNotification);
-    };
-  }, [socket, fetchConnections]);
+  }, [getToken]);
 
   const handleMessage = async (userId: string) => {
     try {

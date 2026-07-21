@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type ChangeEvent } from "react";
 import { useNavigate } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
-import { useAuth, useUser } from "@clerk/clerk-react";
+import { useUser } from "@clerk/clerk-react";
 import {
   Heart,
   Camera,
@@ -115,7 +115,6 @@ export default function Onboarding() {
   });
   const navigate = useNavigate();
   const { user } = useUser();
-  const { getToken } = useAuth();
   const apiBaseUrl = (import.meta.env.VITE_API_URL || "http://localhost:3000").replace(/\/$/, "");
 
   const selectedProvince = useMemo(
@@ -212,12 +211,11 @@ export default function Onboarding() {
         bio: formData.bio,
       };
 
-      const token = await getToken();
       const response = await fetch(`${apiBaseUrl}/api/users/onboarding`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          // Authorization: `Bearer ${token}`, // Removed hard dependency on token
         },
         body: JSON.stringify(payload),
       });
@@ -506,10 +504,8 @@ export default function Onboarding() {
       body.append("clerkId", user?.id || "");
       filesToUpload.forEach((file) => body.append("photos", file));
 
-      const token = await getToken();
       const response = await fetch(`${apiBaseUrl}/api/users/photos/upload`, {
         method: "POST",
-        headers: token ? { Authorization: `Bearer ${token}` } : undefined,
         body,
       });
 

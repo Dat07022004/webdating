@@ -2,12 +2,10 @@ import React from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Phone, PhoneOff, Mic, MicOff, Video, VideoOff } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { CallState, CallType } from "@/hooks/useWebRTC";
+import { CallState } from "@/hooks/useWebRTC";
 
 interface VideoCallModalProps {
   callState: CallState;
-  callType: CallType;
-  callError?: string | null;
   localVideoRef: React.RefObject<HTMLVideoElement>;
   remoteVideoRef: React.RefObject<HTMLVideoElement>;
   onEndCall: () => void;
@@ -19,8 +17,6 @@ interface VideoCallModalProps {
 
 export const VideoCallModal: React.FC<VideoCallModalProps> = ({
   callState,
-  callType,
-  callError,
   localVideoRef,
   remoteVideoRef,
   onEndCall,
@@ -31,7 +27,6 @@ export const VideoCallModal: React.FC<VideoCallModalProps> = ({
 }) => {
   const [isMuted, setIsMuted] = React.useState(false);
   const [isVideoOff, setIsVideoOff] = React.useState(false);
-  const isAudioCall = callType === "audio";
 
   if (callState === "idle") return null;
 
@@ -63,23 +58,7 @@ export const VideoCallModal: React.FC<VideoCallModalProps> = ({
         exit={{ opacity: 0 }}
         className="fixed inset-0 z-50 flex items-center justify-center bg-background/95 backdrop-blur-sm"
       >
-        {callState === "failed" ? (
-          <motion.div
-            initial={{ scale: 0.9 }}
-            animate={{ scale: 1 }}
-            className="flex flex-col items-center gap-5 p-8 bg-card rounded-2xl shadow-xl w-96 max-w-[calc(100vw-2rem)] text-center"
-          >
-            <div className="w-16 h-16 rounded-full bg-destructive/10 text-destructive flex items-center justify-center">
-              <PhoneOff className="w-8 h-8" />
-            </div>
-            <div>
-              <h3 className="text-xl font-semibold">Call ended</h3>
-              <p className="text-muted-foreground mt-2">
-                {callError || "The call could not be completed."}
-              </p>
-            </div>
-          </motion.div>
-        ) : callState === "receiving" ? (
+        {callState === "receiving" ? (
           <motion.div
             initial={{ scale: 0.9 }}
             animate={{ scale: 1 }}
@@ -103,7 +82,7 @@ export const VideoCallModal: React.FC<VideoCallModalProps> = ({
             <div className="text-center">
               <h3 className="text-xl font-semibold">{callerName}</h3>
               <p className="text-muted-foreground mt-1">
-                Incoming {isAudioCall ? "audio" : "video"} call...
+                Incoming video call...
               </p>
             </div>
             <div className="flex gap-4 w-full">
@@ -125,59 +104,33 @@ export const VideoCallModal: React.FC<VideoCallModalProps> = ({
             </div>
           </motion.div>
         ) : (
-          <div
-            className={
-              isAudioCall
-                ? "w-full max-w-md rounded-3xl bg-card relative overflow-hidden flex flex-col shadow-2xl p-8 items-center gap-6"
-                : "w-full h-full md:w-[80vw] md:h-[80vh] md:rounded-3xl bg-black relative overflow-hidden flex flex-col shadow-2xl"
-            }
-          >
+          <div className="w-full h-full md:w-[80vw] md:h-[80vh] md:rounded-3xl bg-black relative overflow-hidden flex flex-col shadow-2xl">
+            {/* Remote Video (Full Screen) */}
             <video
               ref={remoteVideoRef}
               autoPlay
               playsInline
               muted={false}
-              className={isAudioCall ? "hidden" : "w-full h-full object-cover"}
+              className="w-full h-full object-cover"
             />
 
-            {isAudioCall ? (
-              <>
-                <img
-                  src={
-                    callerImage ||
-                    "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=100&h=100&fit=crop"
-                  }
-                  alt={callerName}
-                  className="w-28 h-28 rounded-full object-cover shadow-lg border-2 border-primary"
-                />
-                <div className="text-center">
-                  <h2 className="text-2xl font-semibold">{callerName}</h2>
-                  <p className="text-muted-foreground mt-1">
-                    {callState === "calling"
-                      ? "Calling..."
-                      : callState === "connecting"
-                        ? "Connecting..."
-                        : "Audio call"}
-                  </p>
-                </div>
-              </>
-            ) : (
-              <motion.div
-                drag
-                dragConstraints={{ left: 0, right: 300, top: 0, bottom: 500 }}
-                className="absolute top-6 right-6 w-32 md:w-48 aspect-[3/4] bg-zinc-900 rounded-xl overflow-hidden shadow-xl border-2 border-zinc-800"
-              >
-                <video
-                  ref={localVideoRef}
-                  autoPlay
-                  playsInline
-                  muted
-                  className="w-full h-full object-cover"
-                />
-              </motion.div>
-            )}
+            {/* Local Video (Floating) */}
+            <motion.div
+              drag
+              dragConstraints={{ left: 0, right: 300, top: 0, bottom: 500 }}
+              className="absolute top-6 right-6 w-32 md:w-48 aspect-[3/4] bg-zinc-900 rounded-xl overflow-hidden shadow-xl border-2 border-zinc-800"
+            >
+              <video
+                ref={localVideoRef}
+                autoPlay
+                playsInline
+                muted
+                className="w-full h-full object-cover"
+              />
+            </motion.div>
 
-            {!isAudioCall && callState === "calling" && (
+            {/* Calling Status Overlay */}
+            {callState === "calling" && (
               <div className="absolute inset-0 flex items-center justify-center bg-black/50 backdrop-blur-sm z-10">
                 <div className="text-center">
                   <img
@@ -193,17 +146,12 @@ export const VideoCallModal: React.FC<VideoCallModalProps> = ({
               </div>
             )}
 
-            <div
-              className={
-                isAudioCall
-                  ? "flex items-center gap-4 bg-secondary px-6 py-4 rounded-full"
-                  : "absolute bottom-6 left-1/2 -translate-x-1/2 flex items-center gap-4 bg-zinc-900/80 px-6 py-4 rounded-full backdrop-blur-md z-20"
-              }
-            >
+            {/* Controls */}
+            <div className="absolute bottom-6 left-1/2 -translate-x-1/2 flex items-center gap-4 bg-zinc-900/80 px-6 py-4 rounded-full backdrop-blur-md z-20">
               <Button
                 variant="ghost"
                 size="icon"
-                className={`rounded-full w-12 h-12 ${isMuted ? "bg-red-500/20 text-red-500 hover:bg-red-500/30 hover:text-red-500" : isAudioCall ? "hover:bg-background" : "text-white hover:bg-white/20"}`}
+                className={`rounded-full w-12 h-12 ${isMuted ? "bg-red-500/20 text-red-500 hover:bg-red-500/30 hover:text-red-500" : "text-white hover:bg-white/20"}`}
                 onClick={toggleMute}
               >
                 {isMuted ? (
@@ -220,20 +168,18 @@ export const VideoCallModal: React.FC<VideoCallModalProps> = ({
               >
                 <PhoneOff className="w-6 h-6" />
               </Button>
-              {!isAudioCall && (
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className={`rounded-full w-12 h-12 ${isVideoOff ? "bg-red-500/20 text-red-500 hover:bg-red-500/30 hover:text-red-500" : "text-white hover:bg-white/20"}`}
-                  onClick={toggleVideo}
-                >
-                  {isVideoOff ? (
-                    <VideoOff className="w-5 h-5" />
-                  ) : (
-                    <Video className="w-5 h-5" />
-                  )}
-                </Button>
-              )}
+              <Button
+                variant="ghost"
+                size="icon"
+                className={`rounded-full w-12 h-12 ${isVideoOff ? "bg-red-500/20 text-red-500 hover:bg-red-500/30 hover:text-red-500" : "text-white hover:bg-white/20"}`}
+                onClick={toggleVideo}
+              >
+                {isVideoOff ? (
+                  <VideoOff className="w-5 h-5" />
+                ) : (
+                  <Video className="w-5 h-5" />
+                )}
+              </Button>
             </div>
           </div>
         )}

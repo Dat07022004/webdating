@@ -1,8 +1,10 @@
 import { Server } from "socket.io";
+import { createAdapter } from "@socket.io/redis-adapter";
 import { socketAuthMiddleware } from "../middleware/socketMiddleware.js";
 import { registerChatHandlers } from "./chatHandlers.js";
 import { removeUser } from "./onlineUsers.js";
 import { ENV } from "../config/env.js";
+import { connectRedis, createRedisDuplicate } from "../config/redis.js";
 
 let io;
 
@@ -31,7 +33,25 @@ const allowedOrigins = new Set(
     .concat(defaultAllowedOrigins.map((origin) => normalizeOrigin(origin))),
 );
 
-export function initSocket(server) {
+async function setupRedisAdapter(socketServer) {
+  const pubClient = await connectRedis();
+
+  if (!pubClient) {
+    console.log("[Socket] Redis adapter disabled");
+    return;
+  }
+
+  const subClient = await createRedisDuplicate();
+  if (!subClient) {
+    console.warn("[Socket] Redis adapter disabled: missing subscriber");
+    return;
+  }
+
+  socketServer.adapter(createAdapter(pubClient, subClient));
+  console.log("[Socket] Redis adapter enabled");
+}
+
+export async function initSocket(server) {
   io = new Server(server, {
     cors: {
       origin: (origin, callback) => {
@@ -51,10 +71,12 @@ export function initSocket(server) {
     },
   });
 
+  await setupRedisAdapter(io);
+
   // Use middleware for authentication
   io.use(socketAuthMiddleware);
 
-  io.on("connection", (socket) => {
+  io.on("connection", async (socket) => {
     const userId = socket.data.userId;
     const userName = socket.data.userName;
 

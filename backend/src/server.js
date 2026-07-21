@@ -79,7 +79,6 @@ const corsOptions = {
 app.use(cors(corsOptions));
 app.options(/(.*)/, cors(corsOptions));
 const httpServer = http.createServer(app);
-const io = initSocket(httpServer);
 
 const _dirname = path.resolve();
 
@@ -126,6 +125,7 @@ if (fs.existsSync(path.join(frontendDistPath, "index.html"))) {
 
 const startServer = async () => {
   await connectDB();
+  await initSocket(httpServer);
   httpServer.listen(ENV.PORT, () => {
     console.log(`Server is running on port ${ENV.PORT}`);
   });

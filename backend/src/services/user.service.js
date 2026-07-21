@@ -713,8 +713,8 @@ export const handleUserAction = async ({ clerkId, targetUserId, action }) => {
                     }
                 ]);
 
-                const senderSockets = getSocketIds(currentUser._id.toString());
-                const receiverSockets = getSocketIds(targetUserId);
+                const senderSockets = await getSocketIds(currentUser._id.toString());
+                const receiverSockets = await getSocketIds(targetUserId);
                 
                 [...senderSockets, ...receiverSockets].forEach(sid => io.to(sid).emit('new_notification', { type: 'match' }));
 
@@ -757,7 +757,7 @@ export const handleUserAction = async ({ clerkId, targetUserId, action }) => {
             });
 
             const io = getIO();
-            const receiverSockets = getSocketIds(targetUserId);
+            const receiverSockets = await getSocketIds(targetUserId);
             receiverSockets.forEach(sid => {
                 io.to(sid).emit('new_notification', { type: 'like' });
                 io.to(sid).emit('connection_updated', { type: 'like', connectionId: newConnection._id });

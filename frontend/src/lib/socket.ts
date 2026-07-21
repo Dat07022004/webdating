@@ -11,21 +11,20 @@ export const initializeSocket = (token: string): Socket => {
   if (!socket) {
     socket = io(SOCKET_URL, {
       auth: { token },
-      transports: ["websocket"],
       reconnection: true,
       reconnectionAttempts: 5,
     });
 
     socket.on("connect", () => {
-      console.log("[Socket] Connected with id:", socket?.id);
+      // console.log("[Socket] Connected with id:", socket?.id);
     });
 
     socket.on("connect_error", (error) => {
-      console.error("[Socket] Connection error:", error.message);
+      // console.error("[Socket] Connection error:", error.message);
     });
 
     socket.on("disconnect", (reason) => {
-      console.log("[Socket] Disconnected:", reason);
+      // console.log("[Socket] Disconnected:", reason);
     });
   }
   return socket;

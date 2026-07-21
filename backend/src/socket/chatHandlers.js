@@ -4,9 +4,66 @@ import { addUser, getSocketIds } from "./onlineUsers.js";
 import { Message } from "../models/message.model.js";
 import { Conversation } from "../models/conversation.model.js";
 import { User } from "../models/user.model.js";
+import { getRedisClient } from "../config/redis.js";
 
 const callSessions = new Map();
+const CALL_SESSION_KEY_PREFIX = "socket:call:";
+const CALL_LOG_KEY_PREFIX = "socket:call-log:";
+const CALL_SESSION_TTL_SECONDS = 60 * 10;
 const VALID_CALL_TYPES = new Set(["audio", "video"]);
+
+const callSessionKey = (callId) => `${CALL_SESSION_KEY_PREFIX}${callId}`;
+const callLogKey = (callId) => `${CALL_LOG_KEY_PREFIX}${callId}`;
+
+function serializeSession(session) {
+  return {
+    ...session,
+    calleeSocketIds: Array.from(session.calleeSocketIds || []),
+  };
+}
+
+function normalizeSession(session) {
+  if (!session) return null;
+  return {
+    ...session,
+    calleeSocketIds: new Set(session.calleeSocketIds || []),
+  };
+}
+
+async function saveSession(session) {
+  callSessions.set(session.callId, session);
+
+  const redis = getRedisClient();
+  if (!redis) return;
+
+  try {
+    await redis.set(callSessionKey(session.callId), JSON.stringify(serializeSession(session)), {
+      EX: CALL_SESSION_TTL_SECONDS,
+    });
+  } catch (error) {
+    console.error("[Socket] Failed to save call session:", error.message);
+  }
+}
+
+async function getSessionByCallId(callId) {
+  if (!callId) return null;
+
+  const redis = getRedisClient();
+  if (redis) {
+    try {
+      const raw = await redis.get(callSessionKey(callId));
+      const session = normalizeSession(raw ? JSON.parse(raw) : null);
+      if (session) {
+        callSessions.set(session.callId, session);
+        return session;
+      }
+    } catch (error) {
+      console.error("[Socket] Failed to load call session:", error.message);
+    }
+  }
+
+  return callSessions.get(callId) || null;
+}
 
 function resolveCallType(callType) {
   return VALID_CALL_TYPES.has(callType) ? callType : "video";
@@ -63,7 +120,21 @@ function buildCallLogContent({ callType, callStatus, durationSeconds, reason }) 
 async function createCallLogMessage(io, session, status, reason) {
   if (!session?.conversationId || session.callLogCreated) return null;
 
+  const redis = getRedisClient();
+  if (redis) {
+    try {
+      const created = await redis.set(callLogKey(session.callId), "1", {
+        NX: true,
+        EX: CALL_SESSION_TTL_SECONDS,
+      });
+      if (!created) return null;
+    } catch (error) {
+      console.error("[Socket] Failed to reserve call log:", error.message);
+    }
+  }
+
   session.callLogCreated = true;
+  await saveSession(session);
 
   const callStatus = resolveCallStatus(status, reason);
   const durationSeconds =
@@ -108,8 +179,8 @@ async function createCallLogMessage(io, session, status, reason) {
     io.to(session.conversationId).emit("receive_message", payload);
 
     const participantSockets = new Set([
-      ...getSocketIds(session.callerUserId),
-      ...getSocketIds(session.calleeUserId),
+      ...(await getSocketIds(session.callerUserId)),
+      ...(await getSocketIds(session.calleeUserId)),
     ]);
 
     participantSockets.forEach((sockId) => {
@@ -148,42 +219,78 @@ function emitCompat(
   }
 }
 
-function getSessionByParticipants(callerUserId, calleeUserId) {
+function isActiveCallSession(session) {
+  return session?.status === "ringing" || session?.status === "accepted";
+}
+
+async function getSessionByParticipants(callerUserId, calleeUserId) {
+  const redis = getRedisClient();
+  if (redis) {
+    try {
+      const keys = await redis.keys(`${CALL_SESSION_KEY_PREFIX}*`);
+      for (const key of keys) {
+        const raw = await redis.get(key);
+        const session = normalizeSession(raw ? JSON.parse(raw) : null);
+        if (
+          session?.callerUserId === callerUserId &&
+          session?.calleeUserId === calleeUserId &&
+          isActiveCallSession(session)
+        ) {
+          callSessions.set(session.callId, session);
+          return session;
+        }
+      }
+      return null;
+    } catch (error) {
+      console.error("[Socket] Failed to scan call sessions:", error.message);
+    }
+  }
+
   for (const session of callSessions.values()) {
     if (
       session.callerUserId === callerUserId &&
       session.calleeUserId === calleeUserId &&
-      (session.status === "ringing" || session.status === "accepted")
+      isActiveCallSession(session)
     ) {
       return session;
     }
   }
+
   return null;
 }
 
-function resolveSessionFromPayload(payload, currentUserId) {
-  if (payload?.callId && callSessions.has(payload.callId)) {
-    return callSessions.get(payload.callId);
+async function resolveSessionFromPayload(payload, currentUserId) {
+  if (payload?.callId) {
+    return getSessionByCallId(payload.callId);
   }
 
   if (payload?.callerUserId) {
-    return getSessionByParticipants(payload.callerUserId, currentUserId);
+    return await getSessionByParticipants(payload.callerUserId, currentUserId);
   }
 
   if (payload?.targetUserId) {
-    const asCaller = getSessionByParticipants(
+    const asCaller = await getSessionByParticipants(
       currentUserId,
       payload.targetUserId,
     );
     if (asCaller) return asCaller;
-    return getSessionByParticipants(payload.targetUserId, currentUserId);
+    return await getSessionByParticipants(payload.targetUserId, currentUserId);
   }
 
   return null;
 }
 
-function closeSession(callId) {
+async function closeSession(callId) {
   callSessions.delete(callId);
+
+  const redis = getRedisClient();
+  if (!redis) return;
+
+  try {
+    await redis.del(callSessionKey(callId));
+  } catch (error) {
+    console.error("[Socket] Failed to close call session:", error.message);
+  }
 }
 
 export function registerChatHandlers(io, socket) {
@@ -226,7 +333,7 @@ export function registerChatHandlers(io, socket) {
 
       // Nếu receiver không nằm trong phòng chat (hoặc ta muốn push notification)
       // ta có thể emit trực tiếp vào các socket của receiver đó.
-      const receiverSockets = getSocketIds(receiverId);
+      const receiverSockets = await getSocketIds(receiverId);
       if (receiverSockets.length > 0) {
         // Lấy tên người gửi để hiện thông báo
         const sender = await User.findById(userId).select(
@@ -310,7 +417,7 @@ export function registerChatHandlers(io, socket) {
       return;
     }
 
-    const calleeSocketIds = getSocketIds(targetUserId);
+    const calleeSocketIds = await getSocketIds(targetUserId);
     if (calleeSocketIds.length === 0) {
       await createCallLogMessage(
         io,
@@ -336,7 +443,7 @@ export function registerChatHandlers(io, socket) {
       return;
     }
 
-    const existingSession = getSessionByParticipants(userId, targetUserId);
+    const existingSession = await getSessionByParticipants(userId, targetUserId);
     if (existingSession && existingSession.status === "ringing") {
       return;
     }
@@ -357,7 +464,7 @@ export function registerChatHandlers(io, socket) {
       acceptedAt: null,
       callLogCreated: false,
     };
-    callSessions.set(callId, session);
+    await saveSession(session);
 
     const incomingPayload = {
       callId,
@@ -376,8 +483,8 @@ export function registerChatHandlers(io, socket) {
     );
   };
 
-  const handleCallAccepted = (data = {}) => {
-    const session = resolveSessionFromPayload(data, userId);
+  const handleCallAccepted = async (data = {}) => {
+    const session = await resolveSessionFromPayload(data, userId);
     if (!session) {
       io.to(socket.id).emit("call-failed", {
         reason: "session-not-found",
@@ -413,6 +520,7 @@ export function registerChatHandlers(io, socket) {
     session.status = "accepted";
     session.acceptedSocketId = socket.id;
     session.acceptedAt = Date.now();
+    await saveSession(session);
 
     const acceptedPayload = {
       callId: session.callId,
@@ -439,11 +547,12 @@ export function registerChatHandlers(io, socket) {
     }
   };
 
-  const handleWebrtcOffer = (data = {}) => {
+  const handleWebrtcOffer = async (data = {}) => {
     const { callId, offer } = data;
-    if (!callId || !offer || !callSessions.has(callId)) return;
+    if (!callId || !offer) return;
 
-    const session = callSessions.get(callId);
+    const session = await getSessionByCallId(callId);
+    if (!session) return;
     if (socket.id !== session.callerSocketId || !session.acceptedSocketId) {
       io.to(socket.id).emit("call-failed", {
         reason: "invalid-offer-route",
@@ -461,11 +570,12 @@ export function registerChatHandlers(io, socket) {
     });
   };
 
-  const handleWebrtcAnswer = (data = {}) => {
+  const handleWebrtcAnswer = async (data = {}) => {
     const { callId, answer } = data;
-    if (!callId || !answer || !callSessions.has(callId)) return;
+    if (!callId || !answer) return;
 
-    const session = callSessions.get(callId);
+    const session = await getSessionByCallId(callId);
+    if (!session) return;
     if (socket.id !== session.acceptedSocketId) {
       io.to(socket.id).emit("call-failed", {
         reason: "invalid-answer-route",
@@ -480,12 +590,13 @@ export function registerChatHandlers(io, socket) {
     io.to(session.callerSocketId).emit("call_answered", { callId, answer });
   };
 
-  const handleIceCandidate = (data = {}) => {
+  const handleIceCandidate = async (data = {}) => {
     const { callId, candidate, targetUserId } = data;
     if (!candidate) return;
 
-    if (callId && callSessions.has(callId)) {
-      const session = callSessions.get(callId);
+    if (callId) {
+      const session = await getSessionByCallId(callId);
+      if (!session) return;
 
       let targetSocketId = null;
       if (socket.id === session.callerSocketId) {
@@ -507,7 +618,7 @@ export function registerChatHandlers(io, socket) {
 
     // Legacy fallback
     if (targetUserId) {
-      const targets = getSocketIds(targetUserId);
+      const targets = await getSocketIds(targetUserId);
       emitToSocketIds(io, targets, "ice_candidate", {
         senderUserId: userId,
         candidate,
@@ -516,7 +627,7 @@ export function registerChatHandlers(io, socket) {
   };
 
   const handleCallRejected = async (data = {}) => {
-    const session = resolveSessionFromPayload(data, userId);
+    const session = await resolveSessionFromPayload(data, userId);
     if (!session) return;
 
     const reason = data?.reason || "declined";
@@ -540,11 +651,11 @@ export function registerChatHandlers(io, socket) {
     );
 
     await createCallLogMessage(io, session, status, reason);
-    closeSession(session.callId);
+    await closeSession(session.callId);
   };
 
   const handleCallEnded = async (data = {}) => {
-    const session = resolveSessionFromPayload(data, userId);
+    const session = await resolveSessionFromPayload(data, userId);
     if (!session) return;
 
     const reason = data?.reason || "ended";
@@ -578,7 +689,7 @@ export function registerChatHandlers(io, socket) {
     );
 
     await createCallLogMessage(io, session, status, reason);
-    closeSession(session.callId);
+    await closeSession(session.callId);
   };
 
   const handleSocketDisconnect = async () => {
@@ -599,12 +710,13 @@ export function registerChatHandlers(io, socket) {
           session.status === "accepted" ? "completed" : "missed",
           "caller-disconnected",
         );
-        closeSession(callId);
+        await closeSession(callId);
         continue;
       }
 
       if (session.calleeSocketIds.has(socket.id)) {
         session.calleeSocketIds.delete(socket.id);
+        await saveSession(session);
 
         if (session.acceptedSocketId === socket.id) {
           emitCompat(
@@ -621,7 +733,7 @@ export function registerChatHandlers(io, socket) {
             "completed",
             "peer-disconnected",
           );
-          closeSession(callId);
+          await closeSession(callId);
           continue;
         }
 
@@ -641,7 +753,7 @@ export function registerChatHandlers(io, socket) {
             "missed",
             "callee-unavailable",
           );
-          closeSession(callId);
+          await closeSession(callId);
         }
       }
     }

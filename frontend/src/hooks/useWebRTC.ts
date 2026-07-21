@@ -6,37 +6,16 @@ export type CallState =
   | "calling"
   | "receiving"
   | "connecting"
-  | "in_call"
-  | "failed";
-
-export type CallType = "audio" | "video";
-
-type StartCallOptions = {
-  conversationId?: string;
-  peerName?: string;
-  peerImage?: string;
-};
+  | "in_call";
 
 type IncomingCallPayload = {
   callId: string;
   callerUserId: string;
-  callerName?: string;
-  callType?: CallType;
-  conversationId?: string;
 };
 
 type CallAcceptedPayload = {
   callId: string;
   calleeUserId: string;
-  callType?: CallType;
-  conversationId?: string;
-};
-
-type CallTerminalPayload = {
-  callId?: string;
-  targetUserId?: string;
-  callType?: CallType;
-  reason?: string;
 };
 
 type OfferPayload = {
@@ -54,43 +33,11 @@ type IcePayload = {
   candidate: RTCIceCandidateInit;
 };
 
-const resolveCallType = (value?: string): CallType =>
-  value === "audio" ? "audio" : "video";
-
-const permissionErrorMessage = (callType: CallType) =>
-  callType === "audio"
-    ? "Microphone permission is required to join this call."
-    : "Camera and microphone permissions are required to join this call.";
-
-const reasonMessage = (reason?: string) => {
-  switch (reason) {
-    case "media-permission-denied":
-      return "The other user has not granted microphone/camera permission.";
-    case "callee-offline":
-      return "The other user is offline.";
-    case "no-answer":
-      return "The call was not answered.";
-    case "declined":
-      return "The call was declined.";
-    case "callee-unavailable":
-      return "The other user is unavailable.";
-    case "caller-disconnected":
-    case "peer-disconnected":
-      return "The call ended because the connection was interrupted.";
-    default:
-      return "The call ended.";
-  }
-};
-
 export const useWebRTC = () => {
   const { socket } = useSocket();
   const [callState, setCallState] = useState<CallState>("idle");
-  const [callType, setCallTypeState] = useState<CallType>("video");
-  const [callError, setCallError] = useState<string | null>(null);
   const [remoteUserId, setRemoteUserIdState] = useState<string | null>(null);
   const [incomingCallerId, setIncomingCallerId] = useState<string | null>(null);
-  const [peerName, setPeerName] = useState("User");
-  const [peerImage, setPeerImage] = useState<string | undefined>();
 
   const localVideoRef = useRef<HTMLVideoElement>(null);
   const remoteVideoRef = useRef<HTMLVideoElement>(null);
@@ -104,20 +51,13 @@ export const useWebRTC = () => {
   const connectingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(
     null,
   );
-  const errorTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   const remoteUserIdRef = useRef<string | null>(null);
   const callStateRef = useRef<CallState>("idle");
-  const callTypeRef = useRef<CallType>("video");
-  const conversationIdRef = useRef<string | undefined>();
 
   const setCallStateSafe = (state: CallState) => {
     callStateRef.current = state;
     setCallState(state);
-  };
-
-  const setCallTypeSafe = (type: CallType) => {
-    callTypeRef.current = type;
-    setCallTypeState(type);
   };
 
   const setRemoteUserIdSafe = (id: string | null) => {
@@ -125,71 +65,11 @@ export const useWebRTC = () => {
     setRemoteUserIdState(id);
   };
 
-  const clearTimers = useCallback(() => {
-    if (ringTimeoutRef.current) {
-      clearTimeout(ringTimeoutRef.current);
-      ringTimeoutRef.current = null;
+  const clearRemoteMediaElement = () => {
+    if (remoteVideoRef.current) {
+      remoteVideoRef.current.srcObject = null;
     }
-
-    if (connectingTimeoutRef.current) {
-      clearTimeout(connectingTimeoutRef.current);
-      connectingTimeoutRef.current = null;
-    }
-
-    if (errorTimeoutRef.current) {
-      clearTimeout(errorTimeoutRef.current);
-      errorTimeoutRef.current = null;
-    }
-  }, []);
-
-  const stopMedia = useCallback(() => {
-    if (localStream.current) {
-      localStream.current.getTracks().forEach((track) => track.stop());
-      localStream.current = null;
-    }
-
-    if (peerConnection.current) {
-      peerConnection.current.close();
-      peerConnection.current = null;
-    }
-
-    remoteStream.current = null;
-    pendingIceCandidates.current = [];
-
-    if (localVideoRef.current) localVideoRef.current.srcObject = null;
-    if (remoteVideoRef.current) remoteVideoRef.current.srcObject = null;
-  }, []);
-
-  const cleanup = useCallback(() => {
-    clearTimers();
-    stopMedia();
-    pendingIncomingCall.current = null;
-    activeCallIdRef.current = null;
-    conversationIdRef.current = undefined;
-    setCallError(null);
-    setCallStateSafe("idle");
-    setRemoteUserIdSafe(null);
-    setIncomingCallerId(null);
-    setPeerName("User");
-    setPeerImage(undefined);
-  }, [clearTimers, stopMedia]);
-
-  const failCall = useCallback(
-    (message: string) => {
-      clearTimers();
-      stopMedia();
-      pendingIncomingCall.current = null;
-      activeCallIdRef.current = null;
-      conversationIdRef.current = undefined;
-      setCallError(message);
-      setCallStateSafe("failed");
-
-      errorTimeoutRef.current = setTimeout(() => {
-        cleanup();
-      }, 3500);
-    },
-    [cleanup, clearTimers, stopMedia],
-  );
+  };
 
   const syncVideoElements = useCallback(() => {
     if (localVideoRef.current && localStream.current) {
@@ -203,7 +83,7 @@ export const useWebRTC = () => {
         remoteVideoRef.current.srcObject = remoteStream.current;
       }
       void remoteVideoRef.current.play().catch((error) => {
-        console.warn("[WebRTC] remote media play failed:", error);
+        console.warn("[WebRTC] remote video play failed:", error);
       });
     }
   }, []);
@@ -213,7 +93,9 @@ export const useWebRTC = () => {
     if (!remoteVideoRef.current) return;
 
     stream.getTracks().forEach((track) => {
-      if (!track.enabled) track.enabled = true;
+      if (!track.enabled) {
+        track.enabled = true;
+      }
     });
 
     if (remoteVideoRef.current.srcObject !== stream) {
@@ -223,7 +105,7 @@ export const useWebRTC = () => {
     try {
       await remoteVideoRef.current.play();
     } catch (error) {
-      console.warn("[WebRTC] remote media play failed:", error);
+      console.warn("[WebRTC] remote video play failed:", error);
     }
   };
 
@@ -253,6 +135,44 @@ export const useWebRTC = () => {
     [socket],
   );
 
+  const clearTimers = useCallback(() => {
+    if (ringTimeoutRef.current) {
+      clearTimeout(ringTimeoutRef.current);
+      ringTimeoutRef.current = null;
+    }
+
+    if (connectingTimeoutRef.current) {
+      clearTimeout(connectingTimeoutRef.current);
+      connectingTimeoutRef.current = null;
+    }
+  }, []);
+
+  const cleanup = useCallback(() => {
+    clearTimers();
+
+    if (localStream.current) {
+      localStream.current.getTracks().forEach((track) => {
+        track.stop();
+        localStream.current?.removeTrack(track);
+      });
+      localStream.current = null;
+    }
+    if (peerConnection.current) {
+      peerConnection.current.close();
+      peerConnection.current = null;
+    }
+    pendingIncomingCall.current = null;
+    pendingIceCandidates.current = [];
+    remoteStream.current = null;
+    activeCallIdRef.current = null;
+    setCallStateSafe("idle");
+    setRemoteUserIdSafe(null);
+    setIncomingCallerId(null);
+
+    if (localVideoRef.current) localVideoRef.current.srcObject = null;
+    clearRemoteMediaElement();
+  }, [clearTimers]);
+
   const createPeerConnection = useCallback(
     (callId: string) => {
       if (peerConnection.current) {
@@ -276,9 +196,9 @@ export const useWebRTC = () => {
       };
 
       pc.ontrack = (event) => {
-        const stream = event.streams[0];
-        if (stream) {
-          void attachRemoteStream(stream);
+        const remoteStream = event.streams[0];
+        if (remoteStream) {
+          void attachRemoteStream(remoteStream);
         }
       };
 
@@ -294,19 +214,10 @@ export const useWebRTC = () => {
           (callStateRef.current === "connecting" ||
             callStateRef.current === "in_call")
         ) {
-          emitEvent("call-ended", {
-            callId: activeCallIdRef.current,
-            targetUserId: remoteUserIdRef.current,
-            reason: "peer-disconnected",
-          });
-          failCall("The call connection failed.");
+          cleanup();
         }
 
-        if (
-          connectionState === "closed" &&
-          callStateRef.current !== "idle" &&
-          callStateRef.current !== "failed"
-        ) {
+        if (connectionState === "closed" && callStateRef.current !== "idle") {
           cleanup();
         }
       };
@@ -316,8 +227,10 @@ export const useWebRTC = () => {
           pc.getSenders().map((sender) => sender.track?.id),
         );
         localStream.current.getTracks().forEach((track) => {
-          if (localStream.current && !existingTrackIds.has(track.id)) {
-            pc.addTrack(track, localStream.current);
+          if (localStream.current) {
+            if (!existingTrackIds.has(track.id)) {
+              pc.addTrack(track, localStream.current);
+            }
           }
         });
       }
@@ -325,10 +238,10 @@ export const useWebRTC = () => {
       peerConnection.current = pc;
       return pc;
     },
-    [cleanup, clearTimers, emitEvent, failCall],
+    [cleanup, clearTimers, emitEvent],
   );
 
-  const initLocalStream = async (type: CallType) => {
+  const initLocalStream = async () => {
     if (localStream.current) {
       const hasLiveTrack = localStream.current
         .getTracks()
@@ -343,106 +256,48 @@ export const useWebRTC = () => {
 
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
+        video: true,
         audio: true,
-        video: type === "video",
       });
       localStream.current = stream;
       if (localVideoRef.current) {
         localVideoRef.current.srcObject = stream;
       }
       return true;
-    } catch (error) {
-      console.error("Failed to get media devices:", error);
+    } catch (e) {
+      console.error("Failed to get media devices:", e);
       return false;
     }
   };
 
-  const startCall = async (
-    targetUserId: string,
-    type: CallType = "video",
-    options: StartCallOptions = {},
-  ) => {
+  const startCall = async (targetUserId: string) => {
     if (!socket || callStateRef.current !== "idle") return;
 
-    setCallError(null);
-    setCallTypeSafe(type);
+    const success = await initLocalStream();
+    if (!success) return;
+
     setRemoteUserIdSafe(targetUserId);
-    setPeerName(options.peerName || "User");
-    setPeerImage(options.peerImage);
-    conversationIdRef.current = options.conversationId;
-
-    const success = await initLocalStream(type);
-    if (!success) {
-      failCall(permissionErrorMessage(type));
-      return;
-    }
-
     setCallStateSafe("calling");
 
-    emitEvent("call-user", {
-      targetUserId,
-      callType: type,
-      conversationId: options.conversationId,
-    });
+    emitEvent("call-user", { targetUserId });
 
+    // Ring timeout: auto-stop if nobody accepts in 30s.
     clearTimers();
     ringTimeoutRef.current = setTimeout(() => {
       if (callStateRef.current === "calling") {
-        emitEvent("call-ended", {
-          targetUserId,
-          conversationId: options.conversationId,
-          reason: "no-answer",
-        });
-        failCall("The call was not answered.");
+        cleanup();
       }
     }, 30_000);
   };
-
-  const rejectCall = useCallback(
-    (reason = "declined") => {
-      if (!socket) {
-        cleanup();
-        return;
-      }
-
-      if (pendingIncomingCall.current) {
-        emitEvent("call-rejected", {
-          callId: pendingIncomingCall.current.callId,
-          callerUserId: pendingIncomingCall.current.callerUserId,
-          callType: callTypeRef.current,
-          conversationId: conversationIdRef.current,
-          reason,
-        });
-      } else if (activeCallIdRef.current) {
-        emitEvent("call-rejected", {
-          callId: activeCallIdRef.current,
-          callerUserId: remoteUserIdRef.current,
-          callType: callTypeRef.current,
-          conversationId: conversationIdRef.current,
-          reason,
-        });
-      }
-
-      cleanup();
-    },
-    [cleanup, emitEvent, socket],
-  );
 
   const answerCall = async () => {
     if (!socket || !pendingIncomingCall.current || !remoteUserIdRef.current)
       return;
 
-    const currentCallType = callTypeRef.current;
-    const success = await initLocalStream(currentCallType);
+    const success = await initLocalStream();
     if (!success) {
-      emitEvent("call-rejected", {
-        callId: pendingIncomingCall.current.callId,
-        callerUserId: pendingIncomingCall.current.callerUserId,
-        callType: currentCallType,
-        conversationId: conversationIdRef.current,
-        reason: "media-permission-denied",
-      });
-      failCall(permissionErrorMessage(currentCallType));
+      alert("CĂNG RỒI: Không xin được quyền mở Camera hoặc Mic trên máy này!");
+      rejectCall();
       return;
     }
 
@@ -454,8 +309,6 @@ export const useWebRTC = () => {
     emitEvent("call-accepted", {
       callId,
       callerUserId: remoteUserIdRef.current,
-      callType: currentCallType,
-      conversationId: conversationIdRef.current,
     });
 
     pendingIncomingCall.current = null;
@@ -463,25 +316,39 @@ export const useWebRTC = () => {
     clearTimers();
     connectingTimeoutRef.current = setTimeout(() => {
       if (callStateRef.current === "connecting") {
-        emitEvent("call-ended", {
-          callId,
-          targetUserId: remoteUserIdRef.current,
-          conversationId: conversationIdRef.current,
-          reason: "connection-timeout",
-        });
-        failCall("The call could not connect.");
+        cleanup();
       }
     }, 20_000);
   };
+
+  const rejectCall = useCallback(() => {
+    if (!socket) {
+      cleanup();
+      return;
+    }
+
+    if (pendingIncomingCall.current) {
+      emitEvent("call-rejected", {
+        callId: pendingIncomingCall.current.callId,
+        callerUserId: pendingIncomingCall.current.callerUserId,
+        reason: "declined",
+      });
+    } else if (activeCallIdRef.current) {
+      emitEvent("call-rejected", {
+        callId: activeCallIdRef.current,
+        callerUserId: remoteUserIdRef.current,
+        reason: "declined",
+      });
+    }
+
+    cleanup();
+  }, [cleanup, emitEvent, socket]);
 
   const endCall = useCallback(() => {
     if (socket && callStateRef.current !== "idle") {
       emitEvent("call-ended", {
         callId: activeCallIdRef.current,
         targetUserId: remoteUserIdRef.current,
-        callType: callTypeRef.current,
-        conversationId: conversationIdRef.current,
-        reason: "ended",
       });
     }
 
@@ -501,33 +368,33 @@ export const useWebRTC = () => {
   useEffect(() => {
     if (!socket) return;
 
-    const handleIncomingCall = async (data: IncomingCallPayload) => {
-      const callId = data.callId || `legacy-${Date.now()}-${Math.random()}`;
+    const handleIncomingCall = async (
+      data:
+        | IncomingCallPayload
+        | {
+            callerUserId: string;
+            callId?: string;
+          },
+    ) => {
+      const callId =
+        "callId" in data && data.callId
+          ? data.callId
+          : `legacy-${Date.now()}-${Math.random()}`;
       const callerUserId = data.callerUserId;
+
       if (!callerUserId) return;
 
       if (callStateRef.current !== "idle") {
-        emitEvent("call-rejected", {
-          callId,
-          callerUserId,
-          reason: "busy",
-          callType: resolveCallType(data.callType),
-          conversationId: data.conversationId,
-        });
+        emitEvent("call-rejected", { callId, callerUserId, reason: "busy" });
         return;
       }
 
-      const incomingType = resolveCallType(data.callType);
-      pendingIncomingCall.current = { ...data, callId };
+      pendingIncomingCall.current = { callId, callerUserId };
       activeCallIdRef.current = callId;
-      conversationIdRef.current = data.conversationId;
-      setCallTypeSafe(incomingType);
       setRemoteUserIdSafe(callerUserId);
       setIncomingCallerId(callerUserId);
-      setPeerName(data.callerName || "Incoming call");
-      setPeerImage(undefined);
-      setCallError(null);
       setCallStateSafe("receiving");
+
       clearTimers();
     };
 
@@ -539,42 +406,38 @@ export const useWebRTC = () => {
 
       clearTimers();
       activeCallIdRef.current = callId;
-      conversationIdRef.current = data.conversationId || conversationIdRef.current;
-      setCallTypeSafe(resolveCallType(data.callType || callTypeRef.current));
       setRemoteUserIdSafe(calleeUserId || remoteUserIdRef.current);
       setCallStateSafe("connecting");
+
+      const success = await initLocalStream();
+      if (!success) {
+        emitEvent("call-ended", { callId, reason: "media-failed" });
+        cleanup();
+        return;
+      }
 
       const pc = createPeerConnection(callId);
       try {
         const offer = await pc.createOffer();
         await pc.setLocalDescription(offer);
+
         emitEvent("webrtc-offer", { callId, offer });
       } catch (error) {
         console.error("[WebRTC] Failed creating/sending offer:", error);
-        emitEvent("call-ended", {
-          callId,
-          reason: "connection-timeout",
-          conversationId: conversationIdRef.current,
-        });
-        failCall("The call could not connect.");
+        cleanup();
         return;
       }
 
       connectingTimeoutRef.current = setTimeout(() => {
         if (callStateRef.current === "connecting") {
-          emitEvent("call-ended", {
-            callId,
-            targetUserId: remoteUserIdRef.current,
-            conversationId: conversationIdRef.current,
-            reason: "connection-timeout",
-          });
-          failCall("The call could not connect.");
+          cleanup();
         }
       }, 20_000);
     };
 
     const handleOffer = async (data: OfferPayload) => {
-      if (!data.callId || !data.offer) return;
+      if (!data.callId) return;
+      if (!data.offer) return;
       if (activeCallIdRef.current && activeCallIdRef.current !== data.callId)
         return;
 
@@ -592,19 +455,14 @@ export const useWebRTC = () => {
         emitEvent("webrtc-answer", { callId: data.callId, answer });
       } catch (error) {
         console.error("[WebRTC] Failed handling offer:", error);
-        emitEvent("call-ended", {
-          callId: data.callId,
-          reason: "connection-timeout",
-          conversationId: conversationIdRef.current,
-        });
-        failCall("The call could not connect.");
+        cleanup();
         return;
       }
 
       clearTimers();
       connectingTimeoutRef.current = setTimeout(() => {
         if (callStateRef.current === "connecting") {
-          failCall("The call could not connect.");
+          cleanup();
         }
       }, 20_000);
     };
@@ -623,18 +481,20 @@ export const useWebRTC = () => {
       )
         return;
 
-      if (!data.answer || !peerConnection.current) return;
+      if (!data.answer) return;
 
-      try {
-        await peerConnection.current.setRemoteDescription(
-          new RTCSessionDescription(data.answer),
-        );
-        await flushPendingIceCandidates();
-        clearTimers();
-        setCallStateSafe("in_call");
-      } catch (error) {
-        console.error("[WebRTC] Failed handling answer:", error);
-        failCall("The call could not connect.");
+      if (peerConnection.current) {
+        try {
+          await peerConnection.current.setRemoteDescription(
+            new RTCSessionDescription(data.answer),
+          );
+          await flushPendingIceCandidates();
+          clearTimers();
+          setCallStateSafe("in_call");
+        } catch (error) {
+          console.error("[WebRTC] Failed handling answer:", error);
+          cleanup();
+        }
       }
     };
 
@@ -675,33 +535,33 @@ export const useWebRTC = () => {
       }
     };
 
-    const handleCallEnded = (data: CallTerminalPayload = {}) => {
-      if (data.reason && data.reason !== "ended") {
-        failCall(reasonMessage(data.reason));
-        return;
-      }
+    const handleCallEnded = () => {
       cleanup();
     };
 
-    const handleCallFailed = (data: CallTerminalPayload = {}) => {
-      failCall(reasonMessage(data.reason));
+    const handleCallFailed = () => {
+      cleanup();
     };
 
-    const handleCallRejected = (data: CallTerminalPayload = {}) => {
-      failCall(reasonMessage(data.reason || "declined"));
+    const handleCallRejected = () => {
+      cleanup();
     };
 
     const handleSocketDisconnect = () => {
       if (callStateRef.current !== "idle") {
-        failCall("Socket disconnected during the call.");
+        cleanup();
       }
     };
 
     socket.on("incoming-call", handleIncomingCall);
+
     socket.on("call-accepted", handleCallAccepted);
+
     socket.on("webrtc-offer", handleOffer);
     socket.on("webrtc-answer", handleAnswer);
+
     socket.on("webrtc-ice-candidate", handleIceCandidate);
+
     socket.on("call-ended", handleCallEnded);
     socket.on("call-rejected", handleCallRejected);
     socket.on("call-failed", handleCallFailed);
@@ -711,10 +571,14 @@ export const useWebRTC = () => {
 
     return () => {
       socket.off("incoming-call", handleIncomingCall);
+
       socket.off("call-accepted", handleCallAccepted);
+
       socket.off("webrtc-offer", handleOffer);
       socket.off("webrtc-answer", handleAnswer);
+
       socket.off("webrtc-ice-candidate", handleIceCandidate);
+
       socket.off("call-ended", handleCallEnded);
       socket.off("call-rejected", handleCallRejected);
       socket.off("call-failed", handleCallFailed);
@@ -725,20 +589,14 @@ export const useWebRTC = () => {
     cleanup,
     createPeerConnection,
     emitEvent,
-    failCall,
     flushPendingIceCandidates,
     syncVideoElements,
-    clearTimers,
   ]);
 
   return {
     callState,
-    callType,
-    callError,
     remoteUserId,
     incomingCallerId,
-    peerName,
-    peerImage,
     localVideoRef,
     remoteVideoRef,
     startCall,
