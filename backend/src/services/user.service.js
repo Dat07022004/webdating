@@ -26,6 +26,15 @@ const buildUsername = (email, clerkId) => {
     return `${sanitizedUsername}_${clerkId.slice(-6).toLowerCase()}`;
 };
 
+const isSameId = (left, right) => left?.toString() === right?.toString();
+
+const buildConnectionPairQuery = (userId, targetUserId) => ({
+    $or: [
+        { senderId: userId, receiverId: targetUserId },
+        { senderId: targetUserId, receiverId: userId }
+    ]
+});
+
 const buildOnboardingUpdateDoc = ({
     persistedEmail,
     imageUrl,
@@ -648,19 +657,33 @@ export const handleUserAction = async ({ clerkId, targetUserId, action }) => {
         throw createError(404, 'User not found');
     }
 
-    const existingConnection = await Connection.findOne({
-        $or: [
-            { senderId: currentUser._id, receiverId: targetUserId },
-            { senderId: targetUserId, receiverId: currentUser._id }
-        ]
-    });
+    const pairQuery = buildConnectionPairQuery(currentUser._id, targetUserId);
+    const existingConnections = await Connection.find(pairQuery).sort({ updatedAt: -1, createdAt: -1 });
 
-    if (existingConnection) {
-        const isTargetTheSender = existingConnection.senderId.toString() === targetUserId;
+    if (existingConnections.length > 0) {
+        const matchedConnection = existingConnections.find(conn => conn.status === 'matched');
+        const reciprocalPendingConnection = existingConnections.find(conn =>
+            isSameId(conn.senderId, targetUserId) &&
+            isSameId(conn.receiverId, currentUser._id) &&
+            conn.status === 'pending'
+        );
+        const sameDirectionConnection = existingConnections.find(conn =>
+            isSameId(conn.senderId, currentUser._id) &&
+            isSameId(conn.receiverId, targetUserId)
+        );
 
-        if (isTargetTheSender && existingConnection.status === 'pending' && action === 'like') {
-            existingConnection.status = 'matched';
-            await existingConnection.save();
+        if (action === 'like' && (matchedConnection || reciprocalPendingConnection)) {
+            const existingConnection = matchedConnection || reciprocalPendingConnection;
+            if (!matchedConnection) {
+                await Connection.updateMany(
+                    {
+                        ...pairQuery,
+                        status: { $in: ['pending', 'liked', 'accepted'] }
+                    },
+                    { $set: { status: 'matched', updatedAt: new Date() } }
+                );
+                existingConnection.status = 'matched';
+            }
 
             // Notify both users about the match
             try {
@@ -690,13 +713,14 @@ export const handleUserAction = async ({ clerkId, targetUserId, action }) => {
                     }
                 ]);
 
-                const senderSockets = getSocketIds(currentUser._id.toString());
-                const receiverSockets = getSocketIds(targetUserId);
+                const senderSockets = await getSocketIds(currentUser._id.toString());
+                const receiverSockets = await getSocketIds(targetUserId);
                 
                 [...senderSockets, ...receiverSockets].forEach(sid => io.to(sid).emit('new_notification', { type: 'match' }));
 
                 senderSockets.forEach(sid => io.to(sid).emit('new_match', { matchWith: targetName, connectionId: existingConnection._id, userId: targetUserId }));
                 receiverSockets.forEach(sid => io.to(sid).emit('new_match', { matchWith: senderName, connectionId: existingConnection._id, userId: currentUser._id.toString() }));
+                [...senderSockets, ...receiverSockets].forEach(sid => io.to(sid).emit('connection_updated', { type: 'match', connectionId: existingConnection._id }));
             } catch (socketError) {
                 console.error('[Socket] Match notification failed:', socketError.message);
             }
@@ -705,8 +729,9 @@ export const handleUserAction = async ({ clerkId, targetUserId, action }) => {
         }
 
         if (action === 'pass') {
-             existingConnection.status = 'rejected';
-             await existingConnection.save();
+             const connectionToReject = sameDirectionConnection || reciprocalPendingConnection || existingConnections[0];
+             connectionToReject.status = 'rejected';
+             await connectionToReject.save();
         }
 
         return { message: 'Action registered' };
@@ -732,8 +757,11 @@ export const handleUserAction = async ({ clerkId, targetUserId, action }) => {
             });
 
             const io = getIO();
-            const receiverSockets = getSocketIds(targetUserId);
-            receiverSockets.forEach(sid => io.to(sid).emit('new_notification', { type: 'like' }));
+            const receiverSockets = await getSocketIds(targetUserId);
+            receiverSockets.forEach(sid => {
+                io.to(sid).emit('new_notification', { type: 'like' });
+                io.to(sid).emit('connection_updated', { type: 'like', connectionId: newConnection._id });
+            });
         } catch (err) {
             console.error('[Notification] Like notification failed:', err.message);
         }
@@ -765,6 +793,8 @@ export const getConnections = async ({ clerkId }) => {
     const likes = [];
     const sent = [];
 
+    const connectionByTarget = new Map();
+
     connections.forEach(conn => {
         const sender = conn.senderId;
         const receiver = conn.receiverId;
@@ -776,9 +806,10 @@ export const getConnections = async ({ clerkId }) => {
 
         const isSender = sender._id.toString() === currentUser._id.toString();
         const targetUser = isSender ? receiver : sender;
+        const targetUserId = targetUser?._id?.toString();
 
         const mappedUser = {
-            id: targetUser?._id?.toString() || 'unknown',
+            id: targetUserId || 'unknown',
             name: targetUser?.profile?.personalInfo?.name || targetUser?.username || 'Unknown',
             age: targetUser?.profile?.personalInfo?.age || 20,
             image: targetUser?.profile?.avatarUrl || targetUser?.profile?.photos?.find(p => p.isPrimary)?.url || 'https://images.unsplash.com/photo-1544005313-94ddf0286df2?w=500&h=500&fit=crop',
@@ -786,6 +817,23 @@ export const getConnections = async ({ clerkId }) => {
             lastActive: "Active today",
         };
 
+        const nextConnection = {
+            conn,
+            isSender,
+            mappedUser
+        };
+        const previousConnection = connectionByTarget.get(targetUserId);
+        const shouldReplace =
+            !previousConnection ||
+            (previousConnection.conn.status !== 'matched' && conn.status === 'matched') ||
+            (previousConnection.conn.status === conn.status && conn.updatedAt > previousConnection.conn.updatedAt);
+
+        if (shouldReplace) {
+            connectionByTarget.set(targetUserId, nextConnection);
+        }
+    });
+
+    connectionByTarget.forEach(({ conn, isSender, mappedUser }) => {
         if (conn.status === 'matched') {
             matches.push(mappedUser);
         } else if (conn.status === 'pending') {

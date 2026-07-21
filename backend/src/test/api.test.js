@@ -18,15 +18,22 @@ jest.unstable_mockModule("@clerk/express", () => ({
 const { default: app } = await import("../server.js");
 const { default: request } = await import("supertest");
 
-describe("Kiểm tra API Backend", () => {
-  it("GET /api/health - Trả về 200 OK", async () => {
+describe("Backend API smoke tests", () => {
+  it("GET /api/health returns 200 OK", async () => {
     const res = await request(app).get("/api/health");
 
     expect(res.statusCode).toBe(200);
-    console.log("Health Check Body:", res.body);
+    expect(res.body.message).toBe("OK");
   });
 
-  it("GET /api/users - Kiểm tra kết nối Route User", async () => {
+  it("GET /api/health/db returns 503 when the test app has no real DB connection", async () => {
+    const res = await request(app).get("/api/health/db");
+
+    expect(res.statusCode).toBe(503);
+    expect(res.body.message).toBe("Database is not connected");
+  });
+
+  it("GET /api/users reaches the users route surface", async () => {
     const res = await request(app).get("/api/users");
     expect([200, 401, 404]).toContain(res.statusCode);
   });

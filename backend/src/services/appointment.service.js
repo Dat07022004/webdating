@@ -529,7 +529,7 @@ async function createAppointmentNotification({ userId, senderId, title, message,
 
   try {
     const io = getIO();
-    const socketIds = getSocketIds(String(normalizedUserId));
+    const socketIds = await getSocketIds(String(normalizedUserId));
     socketIds.forEach((socketId) => {
       io.to(socketId).emit('new_notification', {
         type: 'appointment',

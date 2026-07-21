@@ -1,4 +1,7 @@
 import { registerChatHandlers } from "../socket/chatHandlers.js";
+import { Conversation } from "../models/conversation.model.js";
+import { Message } from "../models/message.model.js";
+import { jest } from "@jest/globals";
 
 class MockSocket {
   constructor(id, userId) {
@@ -61,6 +64,10 @@ function setupUser(io, socketId, userId) {
 }
 
 describe("Socket signaling integration", () => {
+  afterEach(() => {
+    jest.restoreAllMocks();
+  });
+
   it("emits incoming-call to all callee sockets after call-user", async () => {
     const io = createMockIo();
     const caller = setupUser(io, "caller-socket-1", "caller-user-1");
@@ -78,6 +85,23 @@ describe("Socket signaling integration", () => {
     expect(incomingOnFirst[0].payload.callerUserId).toBe("caller-user-1");
     expect(incomingOnSecond[0].payload.callerUserId).toBe("caller-user-1");
     expect(incomingOnFirst[0].payload.callId).toEqual(incomingOnSecond[0].payload.callId);
+  });
+
+  it("passes call type and conversation id through signaling", async () => {
+    const io = createMockIo();
+    const caller = setupUser(io, "caller-socket-type", "caller-user-type");
+    setupUser(io, "callee-socket-type", "callee-user-type");
+
+    await caller.trigger("call-user", {
+      targetUserId: "callee-user-type",
+      conversationId: "conversation-type",
+      callType: "audio",
+    });
+
+    const incoming = io.getEvents("callee-socket-type", "incoming-call")[0];
+
+    expect(incoming.payload.callType).toBe("audio");
+    expect(incoming.payload.conversationId).toBe("conversation-type");
   });
 
   it("enforces first-accept-wins when callee has multiple sockets", async () => {
@@ -211,5 +235,67 @@ describe("Socket signaling integration", () => {
     );
 
     expect(staleOfferErrors).toHaveLength(0);
+  });
+
+  it("creates a call log message when an accepted call ends", async () => {
+    const io = createMockIo();
+    const caller = setupUser(io, "caller-socket-log", "caller-user-log");
+    const callee = setupUser(io, "callee-socket-log", "callee-user-log");
+    const message = {
+      _id: "call-message-1",
+      conversationId: "conversation-log",
+      senderId: "caller-user-log",
+      receiverId: "callee-user-log",
+      type: "call",
+      content: "Cuộc gọi thoại đã kết thúc - 00:00",
+      metadata: {
+        callType: "audio",
+        callStatus: "completed",
+      },
+      toObject() {
+        return {
+          _id: this._id,
+          conversationId: this.conversationId,
+          senderId: this.senderId,
+          receiverId: this.receiverId,
+          type: this.type,
+          content: this.content,
+          metadata: this.metadata,
+        };
+      },
+    };
+
+    jest.spyOn(Message, "create").mockResolvedValue(message);
+    jest.spyOn(Conversation, "findByIdAndUpdate").mockResolvedValue({});
+
+    await caller.trigger("call-user", {
+      targetUserId: "callee-user-log",
+      conversationId: "conversation-log",
+      callType: "audio",
+    });
+    const incoming = io.getEvents("callee-socket-log", "incoming-call")[0];
+    const callId = incoming.payload.callId;
+
+    await callee.trigger("call-accepted", { callId });
+    await caller.trigger("call-ended", { callId, reason: "ended" });
+
+    expect(Message.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        conversationId: "conversation-log",
+        senderId: "caller-user-log",
+        receiverId: "callee-user-log",
+        type: "call",
+        metadata: expect.objectContaining({
+          callId,
+          callType: "audio",
+          callStatus: "completed",
+        }),
+      }),
+    );
+
+    expect(Conversation.findByIdAndUpdate).toHaveBeenCalledWith(
+      "conversation-log",
+      expect.objectContaining({ lastMessage: "call-message-1" }),
+    );
   });
 });

@@ -27,13 +27,50 @@ import { initSocket } from "./socket/index.js";
 import cors from "cors";
 
 const app = express();
-const corsOptions = {
-  origin: [
-    "https://heartly-webdating-frontend-8h1el.sevalla.app",
-    "http://localhost:5173",
-    "http://127.0.0.1:5173",
-    "http://localhost:3000",
+
+const defaultAllowedOrigins = [
+  "https://heartly-webdating-frontend-8h1el.sevalla.app",
+  "http://localhost:5173",
+  "http://127.0.0.1:5173",
+  "http://localhost:3000",
+];
+
+const normalizeOrigin = (origin) => origin?.trim().replace(/\/$/, "");
+
+const parseOrigins = (value) => {
+  if (!value) return [];
+
+  if (value.trim() === "*") {
+    return ["*"];
+  }
+
+  return value
+    .split(",")
+    .map((item) => normalizeOrigin(item))
+    .filter(Boolean);
+};
+
+const allowedOrigins = new Set(
+  [
+    ...defaultAllowedOrigins.map((origin) => normalizeOrigin(origin)),
+    ...parseOrigins(ENV.ALLOWED_ORIGINS),
+    ...parseOrigins(ENV.FRONTEND_URL),
   ],
+);
+
+const corsOptions = {
+  origin: (origin, callback) => {
+    if (
+      !origin ||
+      allowedOrigins.has("*") ||
+      allowedOrigins.has(normalizeOrigin(origin))
+    ) {
+      callback(null, true);
+      return;
+    }
+
+    callback(null, false);
+  },
   credentials: true,
   methods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
   allowedHeaders: ["Content-Type", "Authorization", "Accept"],
@@ -42,7 +79,6 @@ const corsOptions = {
 app.use(cors(corsOptions));
 app.options(/(.*)/, cors(corsOptions));
 const httpServer = http.createServer(app);
-const io = initSocket(httpServer);
 
 const _dirname = path.resolve();
 
@@ -89,6 +125,7 @@ if (fs.existsSync(path.join(frontendDistPath, "index.html"))) {
 
 const startServer = async () => {
   await connectDB();
+  await initSocket(httpServer);
   httpServer.listen(ENV.PORT, () => {
     console.log(`Server is running on port ${ENV.PORT}`);
   });

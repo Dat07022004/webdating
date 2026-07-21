@@ -1,0 +1,13 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "ReadDocumentDBCaBundle",
+      "Effect": "Allow",
+      "Action": [
+        "s3:GetObject"
+      ],
+      "Resource": "arn:aws:s3:::webdating-docdb-ca-055259485156-ap-southeast-1/docdb/global-bundle.pem"
+    }
+  ]
+}

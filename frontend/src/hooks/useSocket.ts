@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { useAuth } from "@clerk/clerk-react";
 import { initializeSocket, disconnectSocket, getSocket } from "../lib/socket";
 import type { Socket } from "socket.io-client";
@@ -9,11 +9,6 @@ export const useSocket = () => {
   const [socketInstance, setSocketInstance] = useState<Socket | null>(
     getSocket(),
   );
-  const getTokenRef = useRef(getToken);
-
-  useEffect(() => {
-    getTokenRef.current = getToken;
-  }, [getToken]);
 
   useEffect(() => {
     let unmounted = false;
@@ -30,12 +25,10 @@ export const useSocket = () => {
     const setupSocket = async () => {
       if (isSignedIn) {
         try {
-          const token = await getTokenRef.current();
+          const token = await getToken();
           if (token && !unmounted) {
             activeSocket = initializeSocket(token);
-            setSocketInstance((currentSocket) =>
-              currentSocket === activeSocket ? currentSocket : activeSocket,
-            );
+            setSocketInstance(activeSocket);
 
             activeSocket.off("connect", handleConnect);
             activeSocket.off("disconnect", handleDisconnect);
@@ -63,7 +56,7 @@ export const useSocket = () => {
         activeSocket.off("disconnect", handleDisconnect);
       }
     };
-  }, [isSignedIn]);
+  }, [isSignedIn, getToken]);
 
   return { socket: socketInstance, isConnected };
 };
